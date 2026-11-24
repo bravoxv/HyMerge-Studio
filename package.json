@@ -1,0 +1,28 @@
+{
+  "name": "hymerge-studio",
+  "version": "2.2.0",
+  "description": "HyMerge Studio — Explorador de assets 3D, prefabs y comparador de código/GitHub para Hytale",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . HyMergeStudio --platform=win32 --arch=x64 --icon=assets/app.ico --overwrite --out=dist"
+  },
+  "keywords": [
+    "hytale",
+    "hycreator",
+    "3d-viewer",
+    "asset-explorer",
+    "blockbench",
+    "blockymodel",
+    "electron"
+  ],
+  "author": "HyCreator Studio Team",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-packager": "^17.1.2"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  }
+}

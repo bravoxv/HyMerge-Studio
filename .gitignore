@@ -1,0 +1,14 @@
+node_modules/
+dist/
+resources/
+locales/
+*.exe
+*.dll
+*.pak
+*.dat
+*.bin
+LICENSES.chromium.html
+version
+vk_swiftshader_icd.json
+.DS_Store
+Thumbs.db

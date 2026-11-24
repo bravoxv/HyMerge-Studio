@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyMerge Studio — Hytale Asset & Diff Explorer</title>
+    <link rel="icon" type="image/png" href="assets/logo.png">
+    <meta name="description"
+        content="HyCreator Studio: explorador profesional de assets, modelos 3D, prefabs y texturas de Hytale con vista en árbol jerárquico y comparador de archivos.">
+
+    <!-- Fuentes Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="assets/three.min.js"></script>
+
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Header / Barra de Navegación Principal (Limpia y Sin Duplicados) -->
+        <header class="app-header">
+            <div class="brand-section">
+                <div class="logo-wrapper">
+                    <img src="assets/logo.png" alt="HyMerge Studio Logo" class="brand-logo"
+                        onerror="this.src='assets/hycreator_logo.svg'; this.onerror=function(){this.style.display='none'; document.getElementById('svg-logo-fallback').style.display='flex';};">
+                    <div id="svg-logo-fallback" class="svg-logo" style="display:none;">
+                        <i data-lucide="box" class="brand-icon"></i>
+                    </div>
+                </div>
+                <div class="brand-text">
+                    <h1>HyMerge <span class="badge-modern">STUDIO</span></h1>
+                    <span class="brand-tagline">Hytale Asset & Diff Explorer</span>
+                </div>
+            </div>
+
+            <!-- Selector de Modo Central: Carpetas vs Archivos -->
+            <div class="mode-toggle-group">
+                <button id="mode-folders-btn" class="btn-mode active" title="Comparar Carpetas (Vista Principal)">
+                    <i data-lucide="folder-tree"></i>
+                    <span>Carpetas</span>
+                </button>
+                <button id="mode-files-btn" class="btn-mode" title="Comparar Archivos Individuales">
+                    <i data-lucide="file-code-2"></i>
+                    <span>Archivos</span>
+                </button>
+                <button id="mode-3d-btn" class="btn-mode" title="Modelos 3D y Prefabs de Hytale (HyCreator)">
+                    <i data-lucide="boxes"></i>
+                    <span>Modelos 3D</span>
+                </button>
+            </div>
+
+            <!-- Acciones de Cabecera (Apertura Rápida & Herramientas) -->
+            <div class="header-actions">
+                <!-- 2 Botones de Apertura Rápida con Menú Desplegable -->
+                <div class="quick-open-group">
+                    <div class="btn-split-wrap">
+                        <button id="btn-open-original" class="btn btn-action-original"
+                            title="Abrir archivo Original (Lado Izquierdo) con la aplicación predeterminada del sistema">
+                            <i data-lucide="file-symlink" class="icon-cyan"></i>
+                            <span id="label-open-original">Abrir Original</span>
+                        </button>
+                        <button id="btn-open-original-menu" class="btn btn-split-toggle"
+                            title="Opciones de apertura del archivo Original">
+                            <i data-lucide="chevron-down"></i>
+                        </button>
+                        <div id="menu-dropdown-original" class="custom-dropdown-menu hidden">
+                            <button class="dropdown-item" id="opt-open-original-default">
+                                <i data-lucide="external-link" class="icon-cyan"></i>
+                                <span>Abrir con programa predeterminado</span>
+                            </button>
+                            <button class="dropdown-item" id="opt-open-original-explorer">
+                                <i data-lucide="folder-search" class="icon-cyan"></i>
+                                <span>Mostrar en el Explorador</span>
+                            </button>
+                            <button class="dropdown-item" id="opt-open-original-dialog">
+                                <i data-lucide="folder-input" class="icon-cyan"></i>
+                                <span>Seleccionar otro archivo Original...</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="btn-split-wrap">
+                        <button id="btn-open-modified" class="btn btn-action-modified"
+                            title="Abrir archivo Modificado (Lado Derecho) con la aplicación predeterminada del sistema">
+                            <i data-lucide="file-symlink" class="icon-violet"></i>
+                            <span id="label-open-modified">Abrir Modificado</span>
+                        </button>
+                        <button id="btn-open-modified-menu" class="btn btn-split-toggle"
+                            title="Opciones de apertura del archivo Modificado">
+                            <i data-lucide="chevron-down"></i>
+                        </button>
+                        <div id="menu-dropdown-modified" class="custom-dropdown-menu hidden">
+                            <button class="dropdown-item" id="opt-open-modified-default">
+                                <i data-lucide="external-link" class="icon-violet"></i>
+                                <span>Abrir con programa predeterminado</span>
+                            </button>
+                            <button class="dropdown-item" id="opt-open-modified-explorer">
+                                <i data-lucide="folder-search" class="icon-violet"></i>
+                                <span>Mostrar en el Explorador</span>
+                            </button>
+                            <button class="dropdown-item" id="opt-open-modified-dialog">
+                                <i data-lucide="folder-output" class="icon-violet"></i>
+                                <span>Seleccionar otro archivo Modificado...</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="divider-v"></div>
+
+                <!-- Herramientas globales de intercambio y actualización -->
+                <div class="tool-buttons-group">
+                    <button id="btn-swap-sides" class="btn btn-icon" title="Intercambiar Lados (Original ⇄ Modificado)">
+                        <i data-lucide="arrow-left-right"></i>
+                    </button>
+                    <button id="btn-recompare" class="btn btn-icon" title="Volver a analizar / Refrescar">
+                        <i data-lucide="refresh-cw"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- VISTA 1: COMPARACIÓN DE CARPETAS (VISTA PRINCIPAL Y PREDETERMINADA) -->
+        <main id="folders-viewport" class="folder-viewport">
+            <div class="compare-sources-split">
+                <!-- Izquierda: Comparar Carpetas Locales -->
+                <div class="folder-selection-card">
+                    <div class="local-panel-header">
+                        <span class="local-panel-badge">
+                            <i data-lucide="folder" style="width:13px;height:13px;"></i>
+                            CARPETAS LOCALES
+                        </span>
+                        <button class="folder-swap-connector" id="btn-swap-folders-mini" title="Intercambiar Carpeta Original y Modificada">
+                            <i data-lucide="arrow-up-down"></i>
+                            <span>Intercambiar</span>
+                        </button>
+                    </div>
+
+                    <!-- Original -->
+                    <div class="folder-box folder-box-orig" id="box-folder-left">
+                        <div class="folder-box-badge badge-orig">
+                            <span class="badge-dot dot-cyan"></span>
+                            ORIGINAL (BASE)
+                        </div>
+                        <div class="folder-box-body">
+                            <div class="folder-avatar avatar-cyan">
+                                <i data-lucide="folder" class="icon-cyan"></i>
+                            </div>
+                            <div class="folder-box-info">
+                                <div id="folder-left-name" class="folder-title" title="Haz clic en Examinar para seleccionar">(Sin carpeta seleccionada)</div>
+                                <div id="folder-left-path" class="folder-subtitle" title="Ruta completa">Haz clic en Examinar para seleccionar ruta...</div>
+                            </div>
+                            <button id="btn-select-left-folder" class="btn btn-browse" title="Seleccionar carpeta original">
+                                <i data-lucide="folder-open"></i>
+                                <span>Examinar...</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Modificado -->
+                    <div class="folder-box folder-box-mod" id="box-folder-right">
+                        <div class="folder-box-badge badge-mod">
+                            <span class="badge-dot dot-violet"></span>
+                            MODIFICADO (NUEVO)
+                        </div>
+                        <div class="folder-box-body">
+                            <div class="folder-avatar avatar-violet">
+                                <i data-lucide="folder-git-2" class="icon-violet"></i>
+                            </div>
+                            <div class="folder-box-info">
+                                <div id="folder-right-name" class="folder-title" title="Haz clic en Examinar para seleccionar">(Sin carpeta seleccionada)</div>
+                                <div id="folder-right-path" class="folder-subtitle" title="Ruta completa">Haz clic en Examinar para seleccionar ruta...</div>
+                            </div>
+                            <button id="btn-select-right-folder" class="btn btn-browse" title="Seleccionar carpeta modificada">
+                                <i data-lucide="folder-open"></i>
+                                <span>Examinar...</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Botón Principal de Comparación Local -->
+                    <div class="folder-action-wrapper">
+                        <button id="btn-analyze-folders" class="btn btn-compare-main" title="Iniciar análisis de comparación entre las dos carpetas">
+                            <i data-lucide="git-compare"></i>
+                            <span id="label-analyze-btn">Comparar Carpetas</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Derecha: Comparar desde 2 links de GitHub -->
+                <div id="github-compare-panel" class="github-compare-panel">
+                    <div class="github-panel-header">
+                        <span class="github-panel-badge">
+                            <i data-lucide="github" style="width:13px;height:13px;"></i>
+                            GITHUB (SIN DESCARGAR)
+                        </span>
+                    </div>
+                    <div class="github-input-group">
+                        <label for="gh-left-url">Link Original (Commit / Rama / Carpeta):</label>
+                        <input id="gh-left-url" type="text" class="github-url-input" placeholder="Enlace">
+                    </div>
+                    <div class="github-input-group">
+                        <label for="gh-right-url">Link Modificado (Commit / Rama / Carpeta):</label>
+                        <input id="gh-right-url" type="text" class="github-url-input" placeholder="Enlace">
+                    </div>
+                    <div class="github-compare-row github-bottom-row">
+                        <div class="github-input-group github-token-group">
+                            <label for="gh-token-input">Token GitHub (repos privados):</label>
+                            <input id="gh-token-input" type="password" class="github-url-input" placeholder="ghp_... / github_pat_...">
+                        </div>
+                        <button id="btn-compare-github" class="btn btn-compare-main github-compare-btn" title="Comparar los dos links directamente desde GitHub">
+                            <i data-lucide="git-compare"></i>
+                            <span>Comparar GitHub</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra Inteligente de Filtros y Estadísticas -->
+            <div id="folder-toolbar-bar" class="folder-toolbar-bar">
+                <div class="filter-pills-group">
+                    <button class="filter-pill active" data-filter="all" id="pill-all" title="Muestra la lista completa de archivos encontrados en ambos lados.">
+                        <span>Todos</span>
+                        <span class="pill-count" id="count-all">0</span>
+                    </button>
+                    <button class="filter-pill pill-diff" data-filter="diff" id="pill-diff" title="Agrupa únicamente lo que cambió (Modificados + Solo Original + Nuevo), ocultando los idénticos.">
+                        <i data-lucide="alert-circle" class="pill-icon"></i>
+                        <span>Solo Diferencias</span>
+                        <span class="pill-count" id="count-diff">0</span>
+                    </button>
+                    <button class="filter-pill pill-mod" data-filter="modified" id="pill-modified" title="Archivos que existen en ambos lados, pero su contenido cambió entre la versión Original y la Modificada.">
+                        <span>Modificados</span>
+                        <span class="pill-count" id="count-modified">0</span>
+                    </button>
+                    <button class="filter-pill pill-left" data-filter="left-only" id="pill-left-only" title="Archivos que estaban en la versión Original (izquierda), pero fueron eliminados en la versión Modificada (derecha).">
+                        <span>Solo Original</span>
+                        <span class="pill-count" id="count-left-only">0</span>
+                    </button>
+                    <button class="filter-pill pill-right" data-filter="right-only" id="pill-right-only" title="Archivos que no existían en la versión Original y fueron agregados en la versión Modificada.">
+                        <span>Nuevo</span>
+                        <span class="pill-count" id="count-right-only">0</span>
+                    </button>
+                    <button class="filter-pill pill-same" data-filter="identical" id="pill-identical" title="Archivos que son exactamente iguales en ambos lados (mismo contenido / mismo hash).">
+                        <span>Idénticos</span>
+                        <span class="pill-count" id="count-identical">0</span>
+                    </button>
+                </div>
+
+                <!-- Controles del Árbol de Carpetas (Expandir / Colapsar / Modo de Vista) -->
+                <div class="tree-controls-group">
+                    <button id="btn-expand-all" class="btn btn-sm btn-tree-tool" title="Expandir todas las carpetas del árbol">
+                        <i data-lucide="chevrons-down" style="width:13px; height:13px;"></i>
+                        <span>Expandir Todo</span>
+                    </button>
+                    <button id="btn-collapse-all" class="btn btn-sm btn-tree-tool" title="Colapsar todas las carpetas del árbol">
+                        <i data-lucide="chevrons-up" style="width:13px; height:13px;"></i>
+                        <span>Colapsar Todo</span>
+                    </button>
+
+                    <div class="view-mode-switch">
+                        <button id="btn-view-tree" class="btn-view-option active" title="Vista en Árbol Jerárquico">
+                            <i data-lucide="folder-tree" style="width:13px; height:13px;"></i>
+                            <span>Árbol</span>
+                        </button>
+                        <button id="btn-view-flat" class="btn-view-option" title="Vista en Lista Plana">
+                            <i data-lucide="list" style="width:13px; height:13px;"></i>
+                            <span>Lista</span>
+                        </button>
+                    </div>
+
+                    <button id="btn-expand-files-table" class="btn btn-sm btn-tree-tool" title="Expandir lista de archivos a toda la ventana / Volver al tamaño original">
+                        <i data-lucide="maximize-2" style="width:13px; height:13px;"></i>
+                        <span>Ampliar</span>
+                    </button>
+                </div>
+
+                <div class="folder-search-wrap">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="folder-search-input" class="search-input-modern"
+                        placeholder="Buscar por archivo o extensión (.png, .js, .json)...">
+                    <button id="btn-clear-search" class="btn-clear-search hidden" title="Limpiar búsqueda">✕</button>
+                </div>
+            </div>
+
+            <!-- Contenedor de la Tabla con Scroll de Alto Rendimiento -->
+            <div class="folder-grid-container" id="folder-grid-container">
+                <table class="folder-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 46px; text-align: center;">#</th>
+                            <th style="width: 58px; text-align: center;">Tipo</th>
+                            <th>Nombre de Archivo / Ruta Relativa (Con Vista Previa)</th>
+                            <th style="width: 140px;">Estado</th>
+                            <th style="width: 115px;">Tamaño Orig</th>
+                            <th style="width: 115px;">Tamaño Mod</th>
+                            <th style="width: 180px; text-align: right;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="folder-table-body">
+                        <tr>
+                            <td colspan="7" class="empty-folder-state">
+                                <div class="empty-state-content">
+                                    <div class="empty-state-icon-wrap">
+                                        <i data-lucide="folder-search" class="empty-state-icon"></i>
+                                    </div>
+                                    <h3>Sin comparación activa</h3>
+                                    <p>Selecciona la Carpeta Original y Carpeta Modificada, luego presiona <strong>Comparar Carpetas</strong>.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <!-- Barra informativa de Carga Más -->
+                <div id="table-load-more" class="table-load-more hidden">
+                    <span id="load-more-text">Mostrando elementos...</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- VISTA 2: COMPARACIÓN DE ARCHIVOS LADO A LADO -->
+        <main id="files-viewport" class="diff-viewport hidden">
+            <div id="diff-minimap" class="diff-minimap" title="Minimapa de Diferencias"></div>
+
+            <!-- Panel Izquierdo (Original) -->
+            <div class="panel-container left-panel" id="left-panel-container">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <button id="btn-back-to-folders" class="btn btn-secondary btn-sm"
+                            title="Volver a la lista de comparación de carpetas">
+                            <i data-lucide="arrow-left"></i>
+                            <span>Volver a Carpetas</span>
+                        </button>
+                        <i data-lucide="file-text" class="panel-icon icon-left"></i>
+                        <span id="left-file-name" class="file-name">Archivo Izquierdo</span>
+                        <span class="badge-side">ORIGINAL</span>
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn-panel-action" id="btn-load-left" title="Cargar archivo en panel original">
+                            <i data-lucide="upload"></i>
+                        </button>
+                        <button class="btn-panel-action" id="btn-clear-left" title="Limpiar contenido">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="editor-wrapper">
+                    <textarea id="left-text-input" class="raw-input-textarea"
+                        placeholder="Pega texto aquí o abre un archivo original..."></textarea>
+                    <div id="left-diff-view" class="diff-editor-view"></div>
+                    <div id="left-image-view" class="diff-image-view hidden">
+                        <div class="image-preview-container">
+                            <img id="left-image-elem" alt="Original" class="diff-image-elem">
+                        </div>
+                        <div class="diff-image-info" id="left-image-info"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Divisor central con navegación de diferencias -->
+            <div class="panel-splitter" id="panel-splitter">
+                <div class="splitter-handle">
+                    <i data-lucide="grip-vertical"></i>
+                </div>
+                <div class="splitter-diff-nav">
+                    <button id="btn-prev-diff" class="btn-diff-step" title="Diferencia Anterior (Alt + ↑)">
+                        <i data-lucide="chevron-up"></i>
+                    </button>
+                    <span id="diff-counter-badge" class="diff-counter-badge" title="Diferencia actual / Total">0/0</span>
+                    <button id="btn-next-diff" class="btn-diff-step" title="Siguiente Diferencia (Alt + ↓)">
+                        <i data-lucide="chevron-down"></i>
+                    </button>
+                    <div class="goto-line-box" title="Ir a línea exacta (Ctrl + G)">
+                        <input id="goto-line-input" type="number" min="1" placeholder="Línea" class="goto-line-input" aria-label="Ir a línea exacta">
+                        <button id="btn-goto-line" class="btn-diff-step btn-goto-line" title="Ir a la línea indicada (Enter)">
+                            <i data-lucide="corner-down-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel Derecho (Modificado) -->
+            <div class="panel-container right-panel" id="right-panel-container">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="file-check" class="panel-icon icon-right"></i>
+                        <span id="right-file-name" class="file-name">Archivo Derecho</span>
+                        <span class="badge-side badge-right">MODIFICADO</span>
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn-panel-action" id="btn-load-right" title="Cargar archivo en panel modificado">
+                            <i data-lucide="upload"></i>
+                        </button>
+                        <button class="btn-panel-action" id="btn-clear-right" title="Limpiar contenido">
+                            <i data-lucide="trash-2"></i>
+                        </button>
+                        <button class="btn-panel-action btn-close-files" id="btn-close-files-view" title="Cerrar vista de archivos y dejar en blanco">
+                            <i data-lucide="x"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="editor-wrapper">
+                    <textarea id="right-text-input" class="raw-input-textarea"
+                        placeholder="Pega texto aquí o abre un archivo modificado..."></textarea>
+                    <div id="right-diff-view" class="diff-editor-view"></div>
+                    <div id="right-image-view" class="diff-image-view hidden">
+                        <div class="image-preview-container">
+                            <img id="right-image-elem" alt="Modificado" class="diff-image-elem">
+                        </div>
+                        <div class="diff-image-info" id="right-image-info"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scrollbar Universal único para ambos paneles -->
+            <div class="universal-scrollbar-track" id="universal-scrollbar-track" title="Desplazamiento Universal">
+                <div class="universal-scrollbar-thumb" id="universal-scrollbar-thumb"></div>
+            </div>
+        </main>
+
+        <!-- VISTA 3: MODELOS 3D Y PREFABS (HYCREATOR ENGINE) -->
+        <main id="models3d-viewport" class="models3d-viewport hidden">
+            <!-- Barra superior del visor 3D -->
+            <div class="models3d-header">
+                <div class="models3d-header-left">
+                    <div class="models3d-badge-icon">
+                        <i data-lucide="boxes" class="icon-cyan"></i>
+                    </div>
+                    <div class="models3d-title-group">
+                        <div class="models3d-title-row">
+                            <h2>Visor 3D de Prefabs y Modelos Hytale</h2>
+                            <span class="badge-hycreator">HYCREATOR ENGINE</span>
+                        </div>
+                        <p class="models3d-subtitle">Renderizado de estructuras de bloques y entidades voxel en tiempo real con WebGL.</p>
+                    </div>
+                </div>
+
+                <!-- Selector de Fuente de Datos -->
+                <div class="models3d-header-right">
+                    <!-- Selector de Versión Vanilla (Release vs Pre-release de HyCreator) -->
+                    <div class="models3d-channel-picker" id="models3d-channel-picker">
+                        <span class="picker-label">Versión:</span>
+                        <button id="btn-channel-release" class="btn-channel active" data-channel="release" title="Hytale Vanilla Release (0.7.5)">
+                            <span class="channel-dot dot-release"></span>
+                            <span>Release 0.7.5</span>
+                        </button>
+                        <button id="btn-channel-prerelease" class="btn-channel" data-channel="prerelease" title="Hytale Vanilla Pre-release (0.8.0-pre.4)">
+                            <span class="channel-dot dot-prerelease"></span>
+                            <span>Pre-release 0.8.0</span>
+                        </button>
+                    </div>
+
+                    <div class="divider-v-mini"></div>
+
+                    <button id="btn-open-custom-3d" class="btn btn-browse" title="Abrir cualquier archivo .prefab.json o .blockymodel desde tu computadora">
+                        <i data-lucide="folder-open"></i>
+                        <span>Abrir 3D...</span>
+                    </button>
+
+                    <div class="models3d-source-toggle">
+                        <button id="btn-source-hycreator" class="btn-source active" title="Catálogo de Assets.zip oficial de Hytale">
+                            <i data-lucide="sparkles" class="icon-cyan"></i>
+                            <span>Catálogo</span>
+                        </button>
+                        <button id="btn-source-local" class="btn-source" title="Escanear carpeta abierta en la app">
+                            <i data-lucide="folder-search" class="icon-violet"></i>
+                            <span>Carpeta Local</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenedor Principal en 3 Columnas -->
+            <div class="models3d-body">
+                <!-- Panel Lateral Izquierdo: Catálogo y Filtros -->
+                <aside class="models3d-sidebar">
+                    <!-- Buscador -->
+                    <div class="models3d-search-wrap">
+                        <i data-lucide="search" class="search-icon"></i>
+                        <input type="text" id="models3d-search-input" class="search-input-modern" placeholder="Buscar prefab o modelo...">
+                    </div>
+
+                    <!-- Píldoras de Categoría -->
+                    <div class="models3d-categories">
+                        <button class="cat-pill active" data-cat="Prefabs">🏰 Prefabs</button>
+                        <button class="cat-pill" data-cat="blockymodel">🧊 Modelos</button>
+                        <button class="cat-pill" data-cat="Creatures">🐉 Criaturas</button>
+                        <button class="cat-pill" data-cat="Item">⚔️ Items</button>
+                        <button class="cat-pill" data-cat="Todos">✨ Todos</button>
+                    </div>
+
+                    <!-- Contador y Estado -->
+                    <div class="models3d-counter-row">
+                        <span id="models3d-count-label">0 elementos</span>
+                        <div class="view-mode-toggles">
+                            <button id="btn-3d-collapse-all" class="btn-toggle-view" title="Colapsar todas las carpetas">
+                                <i data-lucide="chevrons-up" style="width:13px;height:13px;"></i>
+                            </button>
+                            <button id="btn-3d-view-tree" class="btn-toggle-view active" title="Vista por Carpetas">
+                                <i data-lucide="folder-tree" style="width:13px;height:13px;"></i>
+                            </button>
+                            <button id="btn-3d-view-list" class="btn-toggle-view" title="Vista en Lista Plana">
+                                <i data-lucide="list" style="width:13px;height:13px;"></i>
+                            </button>
+                        </div>
+                        <span id="models3d-loading-spinner" class="spinner-mini hidden">
+                            <i data-lucide="loader-2" class="spin-icon"></i>
+                        </span>
+                    </div>
+
+                    <!-- Lista Scrollable de Elementos -->
+                    <div class="models3d-item-list" id="models3d-item-list">
+                        <div class="empty-list-msg">Cargando catálogo 3D...</div>
+                    </div>
+
+                    <!-- Paginación -->
+                    <div class="models3d-pagination">
+                        <button id="btn-page-prev" class="btn btn-icon btn-sm" disabled title="Página anterior">
+                            <i data-lucide="chevron-left"></i>
+                        </button>
+                        <span id="models3d-page-indicator" class="page-indicator">Pág. 1 de 1</span>
+                        <button id="btn-page-next" class="btn btn-icon btn-sm" disabled title="Página siguiente">
+                            <i data-lucide="chevron-right"></i>
+                        </button>
+                    </div>
+                </aside>
+
+                <!-- Panel Central: Viewport 3D Canvas Three.js -->
+                <section class="models3d-viewport-canvas" id="models3d-viewport-canvas">
+                    <!-- Overlay flotante con nombre y herramientas -->
+                    <div class="viewport-overlay-top">
+                        <div class="model-name-chip">
+                            <span class="status-dot-green"></span>
+                            <span id="active-model-name" class="active-model-name">Selecciona un modelo</span>
+                        </div>
+
+                        <div class="viewport-toolbar">
+                            <button id="btn-3d-rotate" class="btn-vp-tool" title="Alternar giro automático">
+                                <i data-lucide="rotate-cw"></i>
+                            </button>
+                            <button id="btn-3d-grid" class="btn-vp-tool active" title="Alternar cuadrícula de suelo">
+                                <i data-lucide="grid"></i>
+                            </button>
+                            <button id="btn-3d-wireframe" class="btn-vp-tool" title="Modo malla poligonal (Wireframe)">
+                                <i data-lucide="box"></i>
+                            </button>
+                            <button id="btn-3d-reset-cam" class="btn-vp-tool" title="Centrar y encuadrar cámara">
+                                <i data-lucide="maximize-2"></i>
+                            </button>
+                            
+                            <!-- Controles de Animación 3D (.blockyanim) -->
+                            <div id="models3d-anim-controls" class="anim-control-group hidden">
+                                <div class="divider-v-mini"></div>
+                                <button id="btn-anim-play" class="btn-vp-tool btn-anim-toggle active" title="Reproducir / Pausar animación">
+                                    <i data-lucide="pause" id="icon-anim-play" class="icon-cyan"></i>
+                                </button>
+                                <select id="select-model-anim" class="anim-select" title="Seleccionar animación de la criatura">
+                                    <option value="">Cargando animaciones...</option>
+                                </select>
+                                <button id="btn-anim-speed" class="btn-vp-tool btn-anim-speed" title="Velocidad: 1.0x (Clic para cambiar)">
+                                    <span id="label-anim-speed">1x</span>
+                                </button>
+                            </div>
+
+                            <div class="divider-v-mini"></div>
+                            <button id="btn-3d-copy-image" class="btn-vp-tool btn-vp-capture" title="Copiar captura 3D SIN FONDO al portapapeles (PNG transparente)">
+                                <i data-lucide="camera" class="icon-cyan"></i>
+                            </button>
+                            <button id="btn-3d-save-image" class="btn-vp-tool" title="Guardar imagen PNG sin fondo en disco...">
+                                <i data-lucide="download" class="icon-emerald"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Three.js inyectado aquí -->
+                    <div id="threejs-container" class="threejs-container">
+                        <div id="models3d-canvas-loader" class="canvas-loader hidden">
+                            <i data-lucide="loader" class="spin-icon-lg"></i>
+                            <span>Construyendo geometría 3D...</span>
+                        </div>
+                        <div id="models3d-drop-zone" class="drag-drop-overlay-3d hidden">
+                            <div class="drop-zone-box">
+                                <i data-lucide="boxes" class="drop-icon"></i>
+                                <h3>Suelta tu modelo aquí</h3>
+                                <p>Formatos soportados: .prefab.json, .blockymodel, .model, .bbmodel</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Barra de control inferior -->
+                    <div class="viewport-overlay-bottom">
+                        <div id="selected-block-badge" class="selected-block-badge hidden">
+                            <span class="sel-block-dot"></span>
+                            <div class="sel-block-text">
+                                <strong id="sel-block-id">Block_ID</strong>
+                                <span id="sel-block-meta">X: 0, Y: 0, Z: 0</span>
+                            </div>
+                            <button id="btn-copy-block-id" class="btn-vp-tool btn-sel-copy" title="Copiar ID del bloque">
+                                <i data-lucide="copy"></i>
+                            </button>
+                            <button id="btn-clear-block-sel" class="btn-vp-tool btn-sel-close" title="Quitar selección">
+                                <i data-lucide="x"></i>
+                            </button>
+                        </div>
+                        <div class="mouse-hints">
+                            <span>🖱️ Clic Izq: Rotar / Seleccionar Bloque</span>
+                            <span>🔍 Rueda: Zoom</span>
+                            <span>🖱️ Clic Der / Shift: Desplazar</span>
+                        </div>
+                        <div class="bg-selector">
+                            <span class="bg-label">Fondo:</span>
+                            <button class="bg-dot bg-dot-oled active" data-bg="oled" title="Fondo Oscuro Profundo"></button>
+                            <button class="bg-dot bg-dot-studio" data-bg="studio" title="Fondo Estudio"></button>
+                            <button class="bg-dot bg-dot-sky" data-bg="sky" title="Fondo Cielo"></button>
+                            <button class="bg-dot bg-dot-grid" data-bg="grid" title="Fondo Neón"></button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Panel Lateral Derecho: Detalles y Desglose de Bloques -->
+                <aside class="models3d-details-panel">
+                    <div class="details-panel-header">
+                        <div class="details-title-row">
+                            <i data-lucide="info" class="icon-cyan"></i>
+                            <h3>Detalles del Modelo</h3>
+                        </div>
+                        <button id="btn-view-json" class="btn btn-sm btn-json" title="Ver estructura JSON del archivo">
+                            <i data-lucide="code"></i>
+                            <span>JSON</span>
+                        </button>
+                    </div>
+
+                    <div class="details-content-scroll" id="details-content-scroll">
+                        <!-- Tarjeta Bloque Seleccionado -->
+                        <div class="details-card hidden" id="card-selected-block" style="border-color: rgba(34, 211, 238, 0.45); background: rgba(15, 23, 42, 0.9);">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <h4 class="card-section-title" style="margin:0; color:#22d3ee;">Bloque Seleccionado</h4>
+                                <button id="btn-det-copy-block-id" class="btn btn-sm btn-icon" title="Copiar ID del bloque" style="width:24px;height:24px;padding:0;">
+                                    <i data-lucide="copy" style="width:12px;height:12px;"></i>
+                                </button>
+                            </div>
+                            <div class="card-prop">
+                                <span class="prop-label">NOMBRE</span>
+                                <span class="prop-val" id="det-sel-block-name">-</span>
+                            </div>
+                            <div class="card-prop">
+                                <span class="prop-label">ID DEL BLOQUE</span>
+                                <span class="prop-val mono text-cyan" id="det-sel-block-id">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Posición (X, Y, Z):</span>
+                                <span class="metric-val mono" id="det-sel-block-coords">-</span>
+                            </div>
+                            <div class="metric-row">
+                                <span class="metric-label">Rotación:</span>
+                                <span class="metric-val" id="det-sel-block-rot">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Tarjeta General -->
+                        <div class="details-card">
+                            <div class="card-prop">
+                                <span class="prop-label">NOMBRE</span>
+                                <span class="prop-val" id="det-name">Ninguno seleccionado</span>
+                            </div>
+                            <div class="card-prop">
+                                <span class="prop-label">RUTA RELATIVA</span>
+                                <span class="prop-val mono" id="det-rel">-</span>
+                            </div>
+                            <div class="card-prop">
+                                <span class="prop-label">FORMATO</span>
+                                <span class="prop-val badge-format" id="det-format">-</span>
+                            </div>
+                            <div class="card-prop">
+                                <span class="prop-label">PESO EN DISCO</span>
+                                <span class="prop-val" id="det-size">-</span>
+                            </div>
+                        </div>
+
+                        <!-- Tarjeta Métricas 3D -->
+                        <div class="details-card">
+                            <h4 class="card-section-title">Métricas 3D</h4>
+                            <div class="metric-row">
+                                <span class="metric-label">Dimensiones (X, Y, Z):</span>
+                                <span class="metric-val text-cyan" id="det-dims">-</span>
+                            </div>
+                            <div class="metric-row" id="row-total-blocks">
+                                <span class="metric-label">Total de Bloques:</span>
+                                <span class="metric-val text-emerald" id="det-blocks">-</span>
+                            </div>
+                            <div class="metric-row" id="row-node-count">
+                                <span class="metric-label">Nodos / Huesos:</span>
+                                <span class="metric-val text-violet" id="det-nodes">-</span>
+                            </div>
+                            <div class="metric-row" id="row-anchor">
+                                <span class="metric-label">Punto de Anclaje:</span>
+                                <span class="metric-val" id="det-anchor">-</span>
+                            </div>
+                        </div>
+
+                        <!-- Desglose de Bloques -->
+                        <div class="details-card" id="card-block-breakdown">
+                            <h4 class="card-section-title" id="title-block-breakdown">Tipos de Bloques</h4>
+                            <div class="block-types-list" id="block-types-list">
+                                <div class="empty-types-msg">Selecciona un prefab para ver sus componentes.</div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </main>
+
+        <!-- MODAL VISOR DE JSON -->
+        <div id="modal-json-viewer" class="custom-modal hidden">
+            <div class="modal-dialog">
+                <div class="modal-header">
+                    <div class="modal-title">
+                        <i data-lucide="file-code" class="icon-cyan"></i>
+                        <span id="modal-json-filename">archivo.json</span>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="btn-copy-json" class="btn btn-sm btn-action-original">
+                            <i data-lucide="copy"></i>
+                            <span id="label-copy-json">Copiar</span>
+                        </button>
+                        <button id="btn-close-json-modal" class="btn btn-sm btn-icon" title="Cerrar">✕</button>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <pre id="modal-json-content" class="json-code-view"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- MENÚ CONTEXTUAL 3D (CLIC DERECHO SOBRE EL MODELO) -->
+        <div id="context-menu-3d" class="context-menu hidden">
+            <div class="context-header">
+                <i data-lucide="boxes"></i>
+                <span id="ctx-3d-title">Modelo 3D</span>
+            </div>
+            <div class="menu-divider"></div>
+            <button class="menu-item highlight-item" id="ctx-3d-copy-transparent">
+                <i data-lucide="camera" class="menu-icon icon-cyan"></i>
+                <div class="menu-text">
+                    <span class="menu-label">Copiar Imagen Sin Fondo</span>
+                    <span class="menu-sub">PNG Transparente al portapapeles</span>
+                </div>
+            </button>
+            <button class="menu-item" id="ctx-3d-save-transparent">
+                <i data-lucide="download" class="menu-icon icon-emerald"></i>
+                <div class="menu-text">
+                    <span class="menu-label">Guardar Imagen PNG...</span>
+                    <span class="menu-sub">Guardar archivo sin fondo en disco</span>
+                </div>
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-item" id="ctx-3d-reset-camera">
+                <i data-lucide="maximize-2" class="menu-icon icon-violet"></i>
+                <div class="menu-text">
+                    <span class="menu-label">Centrar Cámara</span>
+                    <span class="menu-sub">Re-encuadrar al centro</span>
+                </div>
+            </button>
+            <button class="menu-item" id="ctx-3d-view-code">
+                <i data-lucide="file-code" class="menu-icon icon-cyan"></i>
+                <div class="menu-text">
+                    <span class="menu-label">Ver Código JSON</span>
+                    <span class="menu-sub">Estructura interna del modelo</span>
+                </div>
+            </button>
+        </div>
+
+        <!-- TOAST FLOTANTE DE NOTIFICACIÓN -->
+        <div id="toast-3d-notify" class="toast-3d hidden">
+            <i data-lucide="check-circle-2" class="toast-icon"></i>
+            <span id="toast-3d-message">¡Copiado con éxito!</span>
+        </div>
+
+        <!-- Input de archivo oculto para selector 3D -->
+        <input type="file" id="input-custom-3d-file" class="hidden-file-input" accept=".json,.prefab,.blockymodel,.model,.bbmodel">
+
+        <!-- Barra de Estado Inferior -->
+        <footer class="app-footer">
+            <div class="footer-status">
+                <span class="status-indicator ready" id="status-dot"></span>
+                <span id="footer-message">Listo para comparar carpetas y archivos.</span>
+            </div>
+            <div class="footer-info">
+                <span id="footer-mode-label">Modo: Estructura de Carpetas</span>
+                <span class="dot">•</span>
+                <span id="footer-stats-summary">Codificación: UTF-8 / Binario</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- POPUP FLOTANTE DE PREVISUALIZACIÓN MULTIMEDIA (AMPLIADO EN HOVER) -->
+    <div id="media-preview-popover" class="media-preview-popover hidden">
+        <div class="popover-header">
+            <div class="popover-title-row">
+                <i data-lucide="image" id="popover-icon" class="popover-icon"></i>
+                <span id="popover-filename" class="popover-filename">archivo.png</span>
+                <span id="popover-badge" class="badge-status status-modified">Modificado</span>
+            </div>
+            <div id="popover-subtitle" class="popover-subtitle">Comparación Visual Ampliada</div>
+        </div>
+        <div id="popover-content" class="popover-content">
+            <!-- Inyectado dinámicamente con zoom lado a lado -->
+        </div>
+        <div class="popover-footer">
+            <span id="popover-hint"><i data-lucide="info" class="hint-icon"></i> Usa los botones "Abrir Original" y "Abrir Modificado" para ver el archivo externamente</span>
+        </div>
+    </div>
+
+    <!-- MENÚ CONTEXTUAL PERSONALIZADO (CLIC DERECHO SIEMPRE DISPONIBLE) -->
+    <div id="custom-context-menu" class="context-menu hidden">
+        <div class="context-header">
+            <i data-lucide="mouse-pointer-click"></i>
+            <span id="context-side-title">Acciones de Comparación</span>
+        </div>
+        <div class="menu-divider"></div>
+
+        <button class="menu-item highlight-item" id="ctx-open-system-original">
+            <i data-lucide="file-symlink" class="menu-icon icon-cyan"></i>
+            <div class="menu-text">
+                <span class="menu-label">Abrir Original (Programa del sistema)</span>
+                <span class="menu-sub" id="ctx-sub-original">Ejecutar archivo original externo</span>
+            </div>
+        </button>
+
+        <button class="menu-item highlight-item" id="ctx-open-system-modified">
+            <i data-lucide="file-symlink" class="menu-icon icon-violet"></i>
+            <div class="menu-text">
+                <span class="menu-label">Abrir Modificado (Programa del sistema)</span>
+                <span class="menu-sub" id="ctx-sub-modified">Ejecutar archivo modificado externo</span>
+            </div>
+        </button>
+
+        <button class="menu-item" id="ctx-show-explorer">
+            <i data-lucide="folder-search" class="menu-icon icon-emerald"></i>
+            <div class="menu-text">
+                <span class="menu-label">Mostrar en el Explorador</span>
+                <span class="menu-sub">Ver ubicación en disco</span>
+            </div>
+        </button>
+
+        <div class="menu-divider"></div>
+
+        <button class="menu-item" id="ctx-open-left">
+            <i data-lucide="folder-input" class="menu-icon icon-cyan"></i>
+            <div class="menu-text">
+                <span class="menu-label">Abrir Izquierdo (Cargar elemento)</span>
+                <span class="menu-sub">Cargar elemento en panel original</span>
+            </div>
+        </button>
+
+        <button class="menu-item" id="ctx-open-right">
+            <i data-lucide="folder-output" class="menu-icon icon-violet"></i>
+            <div class="menu-text">
+                <span class="menu-label">Abrir Derecho (Cargar elemento)</span>
+                <span class="menu-sub">Cargar elemento en panel modificado</span>
+            </div>
+        </button>
+
+        <div class="menu-divider"></div>
+
+        <button class="menu-item" id="ctx-copy-to-other">
+            <i data-lucide="copy" class="menu-icon"></i>
+            <div class="menu-text">
+                <span id="ctx-copy-label" class="menu-label">Copiar a la derecha</span>
+                <span class="menu-sub">Sincronizar contenido</span>
+            </div>
+        </button>
+
+        <button class="menu-item" id="ctx-clear-side">
+            <i data-lucide="eraser" class="menu-icon icon-red"></i>
+            <div class="menu-text">
+                <span class="menu-label">Limpiar este panel</span>
+            </div>
+        </button>
+    </div>
+
+    <!-- Inputs ocultos para compatibilidad -->
+    <input type="file" id="input-file-left" class="hidden-file-input">
+    <input type="file" id="input-file-right" class="hidden-file-input">
+
+    <script src="app.js"></script>
+</body>
+
+</html>
