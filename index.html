@@ -6823,14 +6823,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 try {
-                    const chObj = hycreatorInfo?.channels && hycreatorInfo.channels[hycreatorActiveChannel];
-                    const workingDir = hycreatorDataSource === 'local' ? (leftFolderPath || rightFolderPath || '') : null;
-                    const animData = await window.electronAPI.hycreatorReadAsset({
-                        relPath: selectedPath,
-                        channel: hycreatorActiveChannel,
-                        assetsZipOverride: chObj ? chObj.zipPath : null,
-                        workingFolder: workingDir
-                    });
+                    let animData = null;
+                    if (hycreatorDataSource === 'github3d' || !isElectron) {
+                        const ghEntry = gh3dRepoMap && gh3dRepoMap.get(selectedPath);
+                        if (ghEntry && gh3dParsedRepo) {
+                            const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
+                            animData = await readGithubBlobWeb({
+                                owner: gh3dParsedRepo.owner,
+                                repo: gh3dParsedRepo.repo,
+                                sha: ghEntry.sha,
+                                name: selectedPath,
+                                token
+                            });
+                        }
+                    } else {
+                        const chObj = hycreatorInfo?.channels && hycreatorInfo.channels[hycreatorActiveChannel];
+                        const workingDir = hycreatorDataSource === 'local' ? (leftFolderPath || rightFolderPath || '') : null;
+                        animData = await window.electronAPI.hycreatorReadAsset({
+                            relPath: selectedPath,
+                            channel: hycreatorActiveChannel,
+                            assetsZipOverride: chObj ? chObj.zipPath : null,
+                            workingFolder: workingDir
+                        });
+                    }
                     if (animData && animData.content) {
                         currentAnimationData = JSON.parse(animData.content);
                         modelAnimCurrentTime = 0;
@@ -7616,6 +7631,46 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (parsedJson && Array.isArray(parsedJson.elements)) parsedKind = 'blockbench';
         } catch (_) {}
 
+        // Buscar animaciones .blockyanim asociadas en el repositorio GitHub
+        const animations = [];
+        let defaultAnimContent = null;
+        let defaultAnimName = null;
+        if (parsedKind === 'blockymodel') {
+            const parts = item.rel.split('/').filter(Boolean);
+            let animSearchPrefix = '';
+            if (parts.length >= 2) {
+                const modelsIdx = parts.map(p => p.toLowerCase()).lastIndexOf('models');
+                const baseParts = modelsIdx > 0 ? parts.slice(0, modelsIdx) : parts.slice(0, -1);
+                animSearchPrefix = baseParts.join('/').toLowerCase() + '/';
+            }
+            for (const [rel, f] of gh3dRepoMap.entries()) {
+                const rl = rel.toLowerCase();
+                if (!rl.endsWith('.blockyanim')) continue;
+                if (!animSearchPrefix || rl.startsWith(animSearchPrefix)) {
+                    const animName = rel.split('/').pop().replace(/\.blockyanim$/i, '');
+                    animations.push({ name: animName, path: rel, sha: f.sha, speed: 1 });
+                    if (animations.length >= 50) break;
+                }
+            }
+            animations.sort((a, b) => a.name.localeCompare(b.name));
+            const idleEntry = animations.find(a => a.name.toLowerCase().includes('idle')) || animations[0];
+            if (idleEntry) {
+                try {
+                    const animBlob = await readGithubBlobWeb({
+                        owner: gh3dParsedRepo.owner,
+                        repo: gh3dParsedRepo.repo,
+                        sha: idleEntry.sha,
+                        name: idleEntry.path,
+                        token
+                    });
+                    if (animBlob && animBlob.content) {
+                        defaultAnimContent = animBlob.content;
+                        defaultAnimName = idleEntry.name;
+                    }
+                } catch (_) {}
+            }
+        }
+
         return {
             rel_path: item.rel,
             kind: parsedKind,
@@ -7628,7 +7683,9 @@ document.addEventListener('DOMContentLoaded', () => {
             textureDataUrl,
             texturePath,
             attachments: [],
-            animations: []
+            animations,
+            defaultAnimContent,
+            defaultAnimName
         };
     }
 
