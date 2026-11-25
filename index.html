@@ -7499,13 +7499,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function classify3dGithubItem(relPath, fullPath, repoHint = '') {
         const lower = relPath.toLowerCase();
         const fullLower = (fullPath || relPath).toLowerCase();
-        const hintLower = (repoHint || '').toLowerCase();
         const name = relPath.split('/').pop() || relPath;
-        if (
-            lower.endsWith('.prefab.json') ||
-            lower.endsWith('.prefab') ||
-            ((fullLower.includes('prefab') || hintLower.includes('prefab')) && lower.endsWith('.json'))
-        ) {
+        if (lower.endsWith('.prefab.json') || lower.endsWith('.prefab')) {
             return { kind: 'Prefabs', name };
         }
         if (lower.endsWith('.blockymodel') || lower.endsWith('.model') || lower.endsWith('.bbmodel')) {
