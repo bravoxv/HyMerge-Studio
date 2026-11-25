@@ -7916,7 +7916,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!rl.endsWith('.blockyanim')) continue;
                 if (!animSearchPrefix || rl.startsWith(animSearchPrefix)) {
                     const animName = rel.split('/').pop().replace(/\.blockyanim$/i, '');
-                    animations.push({ name: animName, path: rel, sha: f.sha, speed: 1 });
+                    animations.push({ name: animName, path: rel, fullPath: f.path, sha: f.sha, speed: 1 });
                     if (animations.length >= 50) break;
                 }
             }
@@ -7928,6 +7928,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         owner: gh3dParsedRepo.owner,
                         repo: gh3dParsedRepo.repo,
                         sha: idleEntry.sha,
+                        path: idleEntry.fullPath,
+                        ref: gh3dParsedRepo.ref,
                         name: idleEntry.path,
                         token
                     });
