@@ -8016,16 +8016,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(([name]) => name);
 
         const { owner, repo, ref } = gh3dParsedRepo;
-        const repoKey = `${owner}/${repo}@${ref}::`;
+        const repoKey = `${owner}/${repo}@${ref}::v2::`;
 
         function findRepoEntry(relPath) {
-            if (!relPath || typeof relPath !== 'string') return null;
-            const clean = relPath.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
-            const candidates = [clean, `common/${clean}`, `assets/common/${clean}`];
-            for (const c of candidates) {
-                if (gh3dLowerPathMap.has(c)) return gh3dLowerPathMap.get(c);
-            }
-            return null;
+            return findGh3dRepoEntry(relPath);
         }
 
         async function getTexUrl(relPath) {
@@ -8035,7 +8029,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${entry.f.path}`;
             }
             try {
-                const blob = await readGithubBlobWeb({ owner, repo, sha: entry.f.sha, name: entry.rel, token });
+                const blob = await readGithubBlobWeb({ owner, repo, sha: entry.f.sha, path: entry.f.path, ref, name: entry.rel, token });
                 return blob.dataUrl || null;
             } catch (_) {
                 return null;
@@ -8050,17 +8044,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const lower = blockName.toLowerCase();
+            const cleanName = String(blockName).replace(/^\*/, '').split('|')[0].split(':')[0];
+            const lower = cleanName.toLowerCase();
             let dataUrl = null;
             let faces = null;
             let tint = null;
             let drawType = null;
             let color = null;
+            let customModelContent = null;
+            let customModelScale = 1.0;
 
             // 1. Buscar definición JSON del bloque en Item/Items/
             let itemEntry = gh3dItemJsonMap.get(lower);
             if (!itemEntry) {
-                const parts = blockName.split('_');
+                const parts = cleanName.split('_');
                 for (let len = Math.min(parts.length - 1, 3); len >= 2 && !itemEntry; len--) {
                     itemEntry = gh3dItemJsonMap.get(parts.slice(0, len).join('_').toLowerCase());
                 }
@@ -8069,7 +8066,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const itemBlob = await readGithubBlobWeb({ owner, repo, sha: itemEntry.f.sha, path: itemEntry.f.path, ref, name: itemEntry.rel, token });
                     const itemData = JSON.parse(itemBlob.content || '{}');
-                    const bt = itemData.BlockType;
+                    let bt = itemData.BlockType;
+
+                    // Herencia Parent para BlockType
+                    if ((!bt || (!bt.Textures && !bt.CustomModelTexture && !bt.CustomModel)) && (itemData.Parent || itemData.parent)) {
+                        const parentBase = String(itemData.Parent || itemData.parent).replace(/\.json$/i, '').toLowerCase();
+                        const parentEntry = gh3dItemJsonMap.get(parentBase);
+                        if (parentEntry) {
+                            try {
+                                const pBlob = await readGithubBlobWeb({ owner, repo, sha: parentEntry.f.sha, path: parentEntry.f.path, ref, name: parentEntry.rel, token });
+                                const pData = JSON.parse(pBlob.content || '{}');
+                                if (pData.BlockType) {
+                                    bt = { ...pData.BlockType, ...(bt || {}) };
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
                     if (bt) {
                         color = bt.TextureComputedColor || bt.ParticleColor || null;
                         drawType = bt.DrawType || null;
@@ -8081,12 +8094,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (bt.CustomModelTexture && Array.isArray(bt.CustomModelTexture) && bt.CustomModelTexture[0]?.Texture) {
                             dataUrl = await getTexUrl(bt.CustomModelTexture[0].Texture);
                         }
-                        if (!dataUrl && bt.Textures && Array.isArray(bt.Textures) && bt.Textures[0]) {
-                            const t0 = bt.Textures[0];
-                            const allPath = t0.All;
-                            const topPath = t0.Top || t0.Up || t0.UpDown;
-                            const bottomPath = t0.Bottom || t0.Down || t0.UpDown;
-                            const sidesPath = t0.Sides || t0.Side || t0.North || t0.Front;
+
+                        if (bt.CustomModel && typeof bt.CustomModel === 'string') {
+                            if (typeof bt.CustomModelScale === 'number' && bt.CustomModelScale > 0) {
+                                customModelScale = bt.CustomModelScale;
+                            }
+                            const cmEntry = findRepoEntry(bt.CustomModel);
+                            if (cmEntry) {
+                                try {
+                                    const cmBlob = await readGithubBlobWeb({ owner, repo, sha: cmEntry.f.sha, path: cmEntry.f.path, ref, name: cmEntry.rel, token });
+                                    if (cmBlob && cmBlob.content) customModelContent = cmBlob.content;
+                                } catch (_) {}
+                            }
+                        }
+
+                        const texObj = Array.isArray(bt.Textures) ? bt.Textures[0] : (bt.Textures && typeof bt.Textures === 'object' ? bt.Textures : null);
+                        if (!dataUrl && texObj) {
+                            const allPath = texObj.All;
+                            const topPath = texObj.Top || texObj.Up || texObj.UpDown;
+                            const bottomPath = texObj.Bottom || texObj.Down || texObj.UpDown;
+                            const sidesPath = texObj.Sides || texObj.Side || texObj.North || texObj.Front || texObj.South || texObj.East || texObj.West;
                             if (topPath && sidesPath && topPath !== sidesPath) {
                                 const [topUrl, sidesUrl, bottomUrl] = await Promise.all([
                                     getTexUrl(topPath),
@@ -8109,14 +8136,14 @@ document.addEventListener('DOMContentLoaded', () => {
             // 2. Fallback directo en BlockTextures/
             if (!dataUrl) {
                 const directCandidates = [
-                    `BlockTextures/${blockName}.png`,
-                    `BlockTextures/${blockName}_Side.png`,
-                    `BlockTextures/${blockName}_All.png`,
-                    `Blocks/${blockName}.png`,
-                    `Plants/${blockName}.png`,
-                    `Foliage/${blockName}.png`
+                    `BlockTextures/${cleanName}.png`,
+                    `BlockTextures/${cleanName}_Side.png`,
+                    `BlockTextures/${cleanName}_All.png`,
+                    `Blocks/${cleanName}.png`,
+                    `Plants/${cleanName}.png`,
+                    `Foliage/${cleanName}.png`
                 ];
-                const parts = blockName.split('_');
+                const parts = cleanName.split('_');
                 if (parts.length > 2) {
                     const base = parts.slice(0, 2).join('_');
                     directCandidates.push(`BlockTextures/${base}.png`, `BlockTextures/${base}_Side.png`);
@@ -8127,7 +8154,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const info = { dataUrl, faces, tint, drawType, color };
+            const info = { dataUrl, faces, tint, drawType, color, customModelContent, customModelScale };
             gh3dBlockTexCache.set(cacheKey, info);
             result[blockName] = info;
         }));
