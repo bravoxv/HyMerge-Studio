@@ -6955,7 +6955,7 @@ document.addEventListener('DOMContentLoaded', () => {
         threeScene = new THREE.Scene();
         updateSceneBackground();
 
-        threeCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 2000);
+        threeCamera = new THREE.PerspectiveCamera(45, width / height, 0.1, 20000);
         threeCameraTarget = new THREE.Vector3(0, 0, 0);
 
         threeRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
@@ -7163,7 +7163,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         dom.addEventListener('wheel', (e) => {
             e.preventDefault();
-            threeDistance = Math.max(2, Math.min(300, threeDistance + e.deltaY * 0.05));
+            const factor = Math.pow(1.0015, Math.max(-300, Math.min(300, e.deltaY)));
+            const maxDist = (typeof threeMaxDistance === 'number' && threeMaxDistance > 0) ? threeMaxDistance : 2000;
+            threeDistance = Math.max(0.5, Math.min(maxDist, threeDistance * factor));
             updateCameraPosition();
         }, { passive: false });
 
@@ -7371,10 +7373,17 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let threeMaxDistance = 2000;
+
     function resetCameraView(sizeX = 10, sizeY = 10, sizeZ = 10) {
         if (!threeCameraTarget) return;
         const maxDim = Math.max(sizeX, sizeY, sizeZ, 4);
         threeDistance = maxDim * 1.8;
+        threeMaxDistance = Math.max(2000, maxDim * 12);
+        if (threeCamera && threeCamera.far < threeMaxDistance * 2) {
+            threeCamera.far = threeMaxDistance * 2;
+            threeCamera.updateProjectionMatrix();
+        }
         threeRotation.theta = Math.PI / 4;
         threeRotation.phi = Math.PI / 3;
         threeCameraTarget.set(0, sizeY / 2, 0);
