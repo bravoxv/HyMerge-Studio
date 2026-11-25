@@ -7399,7 +7399,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- CATÁLOGO 3D DESDE REPOSITORIO GITHUB ---
     let gh3dAllItems = [];
     let gh3dRepoMap = new Map();
+    let gh3dLowerPathMap = new Map();
+    let gh3dItemJsonMap = new Map();
     let gh3dParsedRepo = null;
+    const gh3dBlockTexCache = new Map();
 
     function parseGithubUrlWeb(rawUrl) {
         if (!rawUrl || typeof rawUrl !== 'string') throw new Error('URL de GitHub vacía');
@@ -7533,10 +7536,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             gh3dParsedRepo = parsed;
             gh3dRepoMap = treeMap;
+            gh3dLowerPathMap = new Map();
+            gh3dItemJsonMap = new Map();
             gh3dAllItems = [];
 
-            const repoHint = `${parsed.repo || ''} ${parsed.subpath || ''}`;
             for (const [rel, f] of treeMap.entries()) {
+                const rl = rel.toLowerCase();
+                gh3dLowerPathMap.set(rl, { rel, f });
+                if ((rl.includes('item/items/') || rl.startsWith('items/')) && rl.endsWith('.json')) {
+                    const base = rl.split('/').pop().replace(/\.json$/i, '');
+                    if (!gh3dItemJsonMap.has(base)) gh3dItemJsonMap.set(base, { rel, f });
+                }
                 const cls = classify3dGithubItem(rel, f.path, repoHint);
                 if (!cls) continue;
                 gh3dAllItems.push({ rel, name: cls.name, kind: cls.kind, sha: f.sha, size: f.size, fullPath: f.path, isGithub3d: true });
@@ -7737,6 +7747,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        let blockTextures = {};
+        if (parsedKind === 'prefab') {
+            try {
+                const parsedPrefab = JSON.parse(finalContent);
+                blockTextures = await resolveGithubPrefabBlockTextures(parsedPrefab, token);
+            } catch (_) {}
+        }
+
         return {
             rel_path: item.rel,
             kind: parsedKind,
@@ -7744,7 +7762,7 @@ document.addEventListener('DOMContentLoaded', () => {
             content: finalContent,
             modelContent: parsedKind !== 'prefab' ? finalContent : null,
             prefabContent: parsedKind === 'prefab' ? finalContent : null,
-            blockTextures: {},
+            blockTextures,
             size_bytes: item.size || finalContent.length,
             textureDataUrl,
             texturePath,
@@ -7753,6 +7771,139 @@ document.addEventListener('DOMContentLoaded', () => {
             defaultAnimContent,
             defaultAnimName
         };
+    }
+
+    async function resolveGithubPrefabBlockTextures(prefabJson, token) {
+        const rawBlocks = prefabJson?.blocks || prefabJson?.Blocks || [];
+        if (!Array.isArray(rawBlocks) || rawBlocks.length === 0 || !gh3dParsedRepo) return {};
+
+        const blockCounts = new Map();
+        for (const b of rawBlocks) {
+            const bName = b && (b.name || b.id || b.type || b.block);
+            if (bName) blockCounts.set(bName, (blockCounts.get(bName) || 0) + 1);
+        }
+        const topBlocks = Array.from(blockCounts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 60)
+            .map(([name]) => name);
+
+        const { owner, repo, ref } = gh3dParsedRepo;
+        const repoKey = `${owner}/${repo}@${ref}::`;
+
+        function findRepoEntry(relPath) {
+            if (!relPath || typeof relPath !== 'string') return null;
+            const clean = relPath.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+            const candidates = [clean, `common/${clean}`, `assets/common/${clean}`];
+            for (const c of candidates) {
+                if (gh3dLowerPathMap.has(c)) return gh3dLowerPathMap.get(c);
+            }
+            return null;
+        }
+
+        async function getTexUrl(relPath) {
+            const entry = findRepoEntry(relPath);
+            if (!entry) return null;
+            if (!token) {
+                return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${entry.f.path}`;
+            }
+            try {
+                const blob = await readGithubBlobWeb({ owner, repo, sha: entry.f.sha, name: entry.rel, token });
+                return blob.dataUrl || null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        const result = {};
+        await Promise.all(topBlocks.map(async (blockName) => {
+            const cacheKey = repoKey + blockName;
+            if (gh3dBlockTexCache.has(cacheKey)) {
+                result[blockName] = gh3dBlockTexCache.get(cacheKey);
+                return;
+            }
+
+            const lower = blockName.toLowerCase();
+            let dataUrl = null;
+            let faces = null;
+            let tint = null;
+            let drawType = null;
+            let color = null;
+
+            // 1. Buscar definición JSON del bloque en Item/Items/
+            let itemEntry = gh3dItemJsonMap.get(lower);
+            if (!itemEntry) {
+                const parts = blockName.split('_');
+                for (let len = Math.min(parts.length - 1, 3); len >= 2 && !itemEntry; len--) {
+                    itemEntry = gh3dItemJsonMap.get(parts.slice(0, len).join('_').toLowerCase());
+                }
+            }
+            if (itemEntry) {
+                try {
+                    const itemBlob = await readGithubBlobWeb({ owner, repo, sha: itemEntry.f.sha, name: itemEntry.rel, token });
+                    const itemData = JSON.parse(itemBlob.content || '{}');
+                    const bt = itemData.BlockType;
+                    if (bt) {
+                        color = bt.TextureComputedColor || bt.ParticleColor || null;
+                        drawType = bt.DrawType || null;
+                        if (Array.isArray(bt.Tint) && bt.Tint[0]) tint = bt.Tint[0];
+                        else if (typeof bt.Tint === 'string') tint = bt.Tint;
+                        else if (Array.isArray(bt.TintUp) && bt.TintUp[0]) tint = bt.TintUp[0];
+                        else if (typeof bt.TintUp === 'string') tint = bt.TintUp;
+
+                        if (bt.CustomModelTexture && Array.isArray(bt.CustomModelTexture) && bt.CustomModelTexture[0]?.Texture) {
+                            dataUrl = await getTexUrl(bt.CustomModelTexture[0].Texture);
+                        }
+                        if (!dataUrl && bt.Textures && Array.isArray(bt.Textures) && bt.Textures[0]) {
+                            const t0 = bt.Textures[0];
+                            const allPath = t0.All;
+                            const topPath = t0.Top || t0.Up || t0.UpDown;
+                            const bottomPath = t0.Bottom || t0.Down || t0.UpDown;
+                            const sidesPath = t0.Sides || t0.Side || t0.North || t0.Front;
+                            if (topPath && sidesPath && topPath !== sidesPath) {
+                                const [topUrl, sidesUrl, bottomUrl] = await Promise.all([
+                                    getTexUrl(topPath),
+                                    getTexUrl(sidesPath),
+                                    bottomPath ? getTexUrl(bottomPath) : Promise.resolve(null)
+                                ]);
+                                if (topUrl || sidesUrl) {
+                                    dataUrl = sidesUrl || topUrl;
+                                    faces = { top: topUrl || sidesUrl, sides: sidesUrl || topUrl, bottom: bottomUrl || sidesUrl || topUrl };
+                                }
+                            } else {
+                                const texPath = allPath || sidesPath || topPath || bottomPath;
+                                if (texPath) dataUrl = await getTexUrl(texPath);
+                            }
+                        }
+                    }
+                } catch (_) {}
+            }
+
+            // 2. Fallback directo en BlockTextures/
+            if (!dataUrl) {
+                const directCandidates = [
+                    `BlockTextures/${blockName}.png`,
+                    `BlockTextures/${blockName}_Side.png`,
+                    `BlockTextures/${blockName}_All.png`,
+                    `Blocks/${blockName}.png`,
+                    `Plants/${blockName}.png`,
+                    `Foliage/${blockName}.png`
+                ];
+                const parts = blockName.split('_');
+                if (parts.length > 2) {
+                    const base = parts.slice(0, 2).join('_');
+                    directCandidates.push(`BlockTextures/${base}.png`, `BlockTextures/${base}_Side.png`);
+                }
+                for (const c of directCandidates) {
+                    const url = await getTexUrl(c);
+                    if (url) { dataUrl = url; break; }
+                }
+            }
+
+            const info = { dataUrl, faces, tint, drawType, color };
+            gh3dBlockTexCache.set(cacheKey, info);
+            result[blockName] = info;
+        }));
+        return result;
     }
 
     // Cargar información inicial y catálogo
@@ -8437,6 +8588,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let tex = texCache.get(dataUrl);
             if (!tex) {
                 const img = new Image();
+                img.crossOrigin = 'anonymous';
                 tex = new THREE.Texture(img);
                 tex.magFilter = THREE.NearestFilter;
                 tex.minFilter = THREE.NearestFilter;
