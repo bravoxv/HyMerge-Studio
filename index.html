@@ -7496,14 +7496,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return { name, isMedia: false, content: decodeBase64Utf8(rawB64) };
     }
 
-    function classify3dGithubItem(relPath, fullPath) {
+    function classify3dGithubItem(relPath, fullPath, repoHint = '') {
         const lower = relPath.toLowerCase();
         const fullLower = (fullPath || relPath).toLowerCase();
+        const hintLower = (repoHint || '').toLowerCase();
         const name = relPath.split('/').pop() || relPath;
         if (
             lower.endsWith('.prefab.json') ||
             lower.endsWith('.prefab') ||
-            ((fullLower.includes('prefab/') || fullLower.includes('prefabs/')) && lower.endsWith('.json'))
+            ((fullLower.includes('prefab') || hintLower.includes('prefab')) && lower.endsWith('.json'))
         ) {
             return { kind: 'Prefabs', name };
         }
@@ -7539,8 +7540,9 @@ document.addEventListener('DOMContentLoaded', () => {
             gh3dRepoMap = treeMap;
             gh3dAllItems = [];
 
+            const repoHint = `${parsed.repo || ''} ${parsed.subpath || ''}`;
             for (const [rel, f] of treeMap.entries()) {
-                const cls = classify3dGithubItem(rel, f.path);
+                const cls = classify3dGithubItem(rel, f.path, repoHint);
                 if (!cls) continue;
                 gh3dAllItems.push({ rel, name: cls.name, kind: cls.kind, sha: f.sha, size: f.size, fullPath: f.path, isGithub3d: true });
             }
@@ -8227,8 +8229,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Renderizar Prefab Voxel con tamaño exacto (1.0 x 1.0 x 1.0) y texturas oficiales
     function renderPrefabVoxel(prefab, blockTextures = {}) {
-        const blocks = prefab.blocks || [];
-        if (blocks.length === 0) return;
+        const rawBlocks = prefab.blocks || prefab.Blocks || [];
+        if (!Array.isArray(rawBlocks) || rawBlocks.length === 0) {
+            showNoModelPlaceholder(hycreatorSelectedItem?.name || 'Prefab', 'prefab_sin_bloques');
+            return;
+        }
+        const blocks = rawBlocks.map(b => ({
+            ...b,
+            name: b.name || b.id || b.type || b.block || 'Stone',
+            x: Number(b.x ?? 0),
+            y: Number(b.y ?? 0),
+            z: Number(b.z ?? 0)
+        }));
 
         // Omitir bloques de aire o vacíos para que las habitaciones, interiores y ventanas sean visibles
         function isAirOrEmptyBlock(name) {
