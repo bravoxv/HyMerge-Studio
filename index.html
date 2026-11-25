@@ -7603,13 +7603,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.kind !== 'Prefabs') {
             const baseNoExt = item.rel.replace(/\.[^/.]+$/, '').toLowerCase();
             const dirPrefix = item.rel.includes('/') ? item.rel.slice(0, item.rel.lastIndexOf('/') + 1).toLowerCase() : '';
-            const shortBase = item.name.replace(/\.[^/.]+$/, '').toLowerCase();
+            const parentDirPrefix = dirPrefix.replace(/[^/]+\/$/, '');
+            const exactCandidates = [
+                baseNoExt + '_texture.png',
+                baseNoExt + '.png',
+                baseNoExt + '_active_texture.png',
+                baseNoExt + '_inactive_texture.png'
+            ];
+
             let texEntry = null;
-            for (const [rel, f] of gh3dRepoMap.entries()) {
-                const rl = rel.toLowerCase();
-                if (!rl.endsWith('.png')) continue;
-                if (rl === baseNoExt + '.png' || rl === baseNoExt + '_texture.png') { texEntry = { rel, f }; break; }
-                if (!texEntry && rl.startsWith(dirPrefix) && rl.includes(shortBase)) texEntry = { rel, f };
+            // 1. Coincidencia exacta junto al modelo (ej. Model_Texture.png, Model.png)
+            for (const cand of exactCandidates) {
+                for (const [rel, f] of gh3dRepoMap.entries()) {
+                    if (rel.toLowerCase() === cand) {
+                        texEntry = { rel, f };
+                        break;
+                    }
+                }
+                if (texEntry) break;
+            }
+            // 2. Fallback: cualquier .png en la MISMA carpeta (sin entrar a subcarpetas como Attachments/)
+            if (!texEntry && dirPrefix) {
+                for (const [rel, f] of gh3dRepoMap.entries()) {
+                    const rl = rel.toLowerCase();
+                    if (!rl.endsWith('.png')) continue;
+                    if (rl.startsWith(dirPrefix) && !rl.slice(dirPrefix.length).includes('/')) {
+                        texEntry = { rel, f };
+                        break;
+                    }
+                }
+            }
+            // 3. Fallback: carpeta Textures/ hermana (ej. Bear_Grizzly/Textures/*.png)
+            if (!texEntry && parentDirPrefix) {
+                const texDir = parentDirPrefix + 'textures/';
+                for (const [rel, f] of gh3dRepoMap.entries()) {
+                    const rl = rel.toLowerCase();
+                    if (rl.endsWith('.png') && rl.startsWith(texDir) && !rl.slice(texDir.length).includes('/')) {
+                        texEntry = { rel, f };
+                        break;
+                    }
+                }
             }
             if (texEntry) {
                 texturePath = texEntry.rel;
