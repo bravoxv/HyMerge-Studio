@@ -7595,45 +7595,94 @@ document.addEventListener('DOMContentLoaded', () => {
         let textureDataUrl = null;
         let texturePath = null;
 
-        if (item.kind !== 'Prefabs') {
+        let parsedKind = item.kind === 'Prefabs' ? 'prefab' : 'blockymodel';
+        let finalContent = content;
+        let explicitTexPath = null;
+        try {
+            const parsedJson = JSON.parse(content);
+            if (parsedJson && !parsedJson.blocks && Array.isArray(parsedJson.Blocks)) {
+                parsedJson.blocks = parsedJson.Blocks;
+                finalContent = JSON.stringify(parsedJson);
+            }
+            if (parsedJson && typeof (parsedJson.Texture || parsedJson.texture) === 'string') {
+                explicitTexPath = (parsedJson.Texture || parsedJson.texture).replace(/\\/g, '/').toLowerCase();
+            }
+            if (parsedJson && Array.isArray(parsedJson.blocks)) parsedKind = 'prefab';
+            else if (parsedJson && Array.isArray(parsedJson.nodes)) parsedKind = 'blockymodel';
+            else if (parsedJson && Array.isArray(parsedJson.elements)) parsedKind = 'blockbench';
+        } catch (_) {}
+
+        if (parsedKind !== 'prefab') {
             const baseNoExt = item.rel.replace(/\.[^/.]+$/, '').toLowerCase();
             const dirPrefix = item.rel.includes('/') ? item.rel.slice(0, item.rel.lastIndexOf('/') + 1).toLowerCase() : '';
             const parentDirPrefix = dirPrefix.replace(/[^/]+\/$/, '');
+            const isAuxMap = (rl) => /(_normal|_bump|_roughness|_metallic|_specular|_emissive|_mask|_ao|icon|preview)\.png$/i.test(rl);
+
             const exactCandidates = [
                 baseNoExt + '_texture.png',
                 baseNoExt + '.png',
+                baseNoExt + '_greyscale.png',
                 baseNoExt + '_active_texture.png',
                 baseNoExt + '_inactive_texture.png'
             ];
 
             let texEntry = null;
-            // 1. Coincidencia exacta junto al modelo (ej. Model_Texture.png, Model.png)
-            for (const cand of exactCandidates) {
+            // 0. Textura explícita declarada en el JSON
+            if (explicitTexPath) {
                 for (const [rel, f] of gh3dRepoMap.entries()) {
-                    if (rel.toLowerCase() === cand) {
+                    const rl = rel.toLowerCase();
+                    if (rl === explicitTexPath || rl.endsWith('/' + explicitTexPath)) {
                         texEntry = { rel, f };
                         break;
                     }
                 }
-                if (texEntry) break;
             }
-            // 2. Fallback: cualquier .png en la MISMA carpeta (sin entrar a subcarpetas como Attachments/)
+            // 1. Coincidencia exacta junto al modelo (ej. Model_Texture.png, Model.png)
+            if (!texEntry) {
+                for (const cand of exactCandidates) {
+                    for (const [rel, f] of gh3dRepoMap.entries()) {
+                        if (rel.toLowerCase() === cand) {
+                            texEntry = { rel, f };
+                            break;
+                        }
+                    }
+                    if (texEntry) break;
+                }
+            }
+            // 2. Fallback en subcarpeta Model_Textures/ o Textures/ dentro de Models/ o carpeta padre
+            if (!texEntry) {
+                const texFolders = [
+                    baseNoExt + '_textures/',
+                    dirPrefix + 'model_textures/',
+                    dirPrefix + 'textures/',
+                    parentDirPrefix + 'textures/',
+                    parentDirPrefix + 'model_textures/'
+                ].filter(Boolean);
+                for (const tf of texFolders) {
+                    const candidatesInFolder = [];
+                    for (const [rel, f] of gh3dRepoMap.entries()) {
+                        const rl = rel.toLowerCase();
+                        if (rl.endsWith('.png') && rl.startsWith(tf) && !isAuxMap(rl)) {
+                            candidatesInFolder.push({ rel, f, rl });
+                        }
+                    }
+                    if (candidatesInFolder.length > 0) {
+                        candidatesInFolder.sort((a, b) => {
+                            const aScore = (a.rl.includes('texture') || a.rl.includes('skin') || a.rl.includes('base')) ? 0 : 1;
+                            const bScore = (b.rl.includes('texture') || b.rl.includes('skin') || b.rl.includes('base')) ? 0 : 1;
+                            return aScore - bScore || a.rel.localeCompare(b.rel);
+                        });
+                        texEntry = { rel: candidatesInFolder[0].rel, f: candidatesInFolder[0].f };
+                        break;
+                    }
+                }
+            }
+            // 3. Fallback: .png en la MISMA carpeta (sin entrar a Attachments/ y excluyendo mapas auxiliares)
             if (!texEntry && dirPrefix) {
                 for (const [rel, f] of gh3dRepoMap.entries()) {
                     const rl = rel.toLowerCase();
-                    if (!rl.endsWith('.png')) continue;
+                    if (!rl.endsWith('.png') || isAuxMap(rl)) continue;
                     if (rl.startsWith(dirPrefix) && !rl.slice(dirPrefix.length).includes('/')) {
-                        texEntry = { rel, f };
-                        break;
-                    }
-                }
-            }
-            // 3. Fallback: carpeta Textures/ hermana (ej. Bear_Grizzly/Textures/*.png)
-            if (!texEntry && parentDirPrefix) {
-                const texDir = parentDirPrefix + 'textures/';
-                for (const [rel, f] of gh3dRepoMap.entries()) {
-                    const rl = rel.toLowerCase();
-                    if (rl.endsWith('.png') && rl.startsWith(texDir) && !rl.slice(texDir.length).includes('/')) {
                         texEntry = { rel, f };
                         break;
                     }
@@ -7647,19 +7696,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 } catch (_) {}
             }
         }
-
-        let parsedKind = item.kind === 'Prefabs' ? 'prefab' : 'blockymodel';
-        let finalContent = content;
-        try {
-            const parsedJson = JSON.parse(content);
-            if (parsedJson && !parsedJson.blocks && Array.isArray(parsedJson.Blocks)) {
-                parsedJson.blocks = parsedJson.Blocks;
-                finalContent = JSON.stringify(parsedJson);
-            }
-            if (parsedJson && Array.isArray(parsedJson.blocks)) parsedKind = 'prefab';
-            else if (parsedJson && Array.isArray(parsedJson.nodes)) parsedKind = 'blockymodel';
-            else if (parsedJson && Array.isArray(parsedJson.elements)) parsedKind = 'blockbench';
-        } catch (_) {}
 
         // Buscar animaciones .blockyanim asociadas en el repositorio GitHub
         const animations = [];
