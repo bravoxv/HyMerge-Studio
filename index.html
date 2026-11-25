@@ -6832,6 +6832,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 owner: gh3dParsedRepo.owner,
                                 repo: gh3dParsedRepo.repo,
                                 sha: ghEntry.f.sha,
+                                path: ghEntry.f.path,
+                                ref: gh3dParsedRepo.ref,
                                 name: ghEntry.rel,
                                 token
                             });
@@ -7488,10 +7490,21 @@ document.addEventListener('DOMContentLoaded', () => {
         return new TextDecoder('utf-8').decode(bytes);
     }
 
-    async function readGithubBlobWeb({ owner, repo, sha, name, token }) {
+    async function readGithubBlobWeb({ owner, repo, sha, path, ref, name, token }) {
+        const ext = getExt(name || '');
+        if ((!token || !token.trim()) && path && ref) {
+            const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path}`;
+            if (isImage(name || '')) {
+                return { name, isMedia: true, isImage: true, isVideo: false, dataUrl: rawUrl };
+            }
+            const rawRes = await fetch(rawUrl);
+            if (rawRes.ok) {
+                const text = await rawRes.text();
+                return { name, isMedia: false, content: text };
+            }
+        }
         const data = await githubApiGetWeb(`/repos/${owner}/${repo}/git/blobs/${sha}`, token);
         const rawB64 = (data.content || '').replace(/\n/g, '');
-        const ext = getExt(name || '');
         if (isImage(name || '')) {
             const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'png' ? 'image/png' : 'image/jpeg';
             return { name, isMedia: true, isImage: true, isVideo: false, dataUrl: `data:${mime};base64,${rawB64}` };
@@ -7505,6 +7518,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const candidates = [clean, `common/${clean}`, `assets/common/${clean}`, `server/${clean}`, `assets/server/${clean}`];
         for (const c of candidates) {
             if (gh3dLowerPathMap.has(c)) return gh3dLowerPathMap.get(c);
+        }
+        for (const [rl, val] of gh3dLowerPathMap.entries()) {
+            if (rl.endsWith('/' + clean)) return val;
         }
         return null;
     }
@@ -7618,7 +7634,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function resolveGithub3dAsset(item) {
         const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
         const { owner, repo, ref } = gh3dParsedRepo;
-        const res = await readGithubBlobWeb({ owner, repo, sha: item.sha, name: item.name, token });
+        const res = await readGithubBlobWeb({ owner, repo, sha: item.sha, path: item.fullPath, ref, name: item.name, token });
         const content = res.content || '';
 
         async function getTexDataOrUrl(texRelPath) {
@@ -7722,7 +7738,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (parentEntry) {
                     try {
-                        const pBlob = await readGithubBlobWeb({ owner, repo, sha: parentEntry.f.sha, name: parentEntry.rel, token });
+                        const pBlob = await readGithubBlobWeb({ owner, repo, sha: parentEntry.f.sha, path: parentEntry.f.path, ref, name: parentEntry.rel, token });
                         const pData = JSON.parse(pBlob.content || '{}');
                         if (!parsedJson.Model && !parsedJson.model && (pData.Model || pData.model)) parsedJson.Model = pData.Model || pData.model;
                         if (!parsedJson.Texture && !parsedJson.texture && (pData.Texture || pData.texture)) parsedJson.Texture = pData.Texture || pData.texture;
@@ -7740,7 +7756,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (modelRef && typeof modelRef === 'string') {
                 const modelEntry = findGh3dRepoEntry(modelRef);
                 if (modelEntry) {
-                    const mBlob = await readGithubBlobWeb({ owner, repo, sha: modelEntry.f.sha, name: modelEntry.rel, token });
+                    const mBlob = await readGithubBlobWeb({ owner, repo, sha: modelEntry.f.sha, path: modelEntry.f.path, ref, name: modelEntry.rel, token });
                     const texRef = parsedJson.Texture || parsedJson.texture;
                     let texRes = texRef ? await getTexDataOrUrl(texRef) : null;
                     if (!texRes) {
@@ -7770,7 +7786,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             const attModelEntry = findGh3dRepoEntry(att.Model);
                             if (!attModelEntry) return null;
                             const [attModelBlob, attTexRes] = await Promise.all([
-                                readGithubBlobWeb({ owner, repo, sha: attModelEntry.f.sha, name: attModelEntry.rel, token }),
+                                readGithubBlobWeb({ owner, repo, sha: attModelEntry.f.sha, path: attModelEntry.f.path, ref, name: attModelEntry.rel, token }),
                                 att.Texture ? getTexDataOrUrl(att.Texture) : Promise.resolve(null)
                             ]);
                             let finalAttTex = attTexRes;
@@ -7811,7 +7827,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const animRepoEntry = findGh3dRepoEntry(idleEntry.path);
                         if (animRepoEntry) {
                             try {
-                                const aBlob = await readGithubBlobWeb({ owner, repo, sha: animRepoEntry.f.sha, name: animRepoEntry.rel, token });
+                                const aBlob = await readGithubBlobWeb({ owner, repo, sha: animRepoEntry.f.sha, path: animRepoEntry.f.path, ref, name: animRepoEntry.rel, token });
                                 if (aBlob && aBlob.content) {
                                     defaultAnimContent = aBlob.content;
                                     defaultAnimName = idleEntry.name;
@@ -8015,7 +8031,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (itemEntry) {
                 try {
-                    const itemBlob = await readGithubBlobWeb({ owner, repo, sha: itemEntry.f.sha, name: itemEntry.rel, token });
+                    const itemBlob = await readGithubBlobWeb({ owner, repo, sha: itemEntry.f.sha, path: itemEntry.f.path, ref, name: itemEntry.rel, token });
                     const itemData = JSON.parse(itemBlob.content || '{}');
                     const bt = itemData.BlockType;
                     if (bt) {
