@@ -7556,6 +7556,7 @@ document.addEventListener('DOMContentLoaded', () => {
             gh3dItemJsonMap = new Map();
             gh3dAllItems = [];
 
+            const repoHint = `${parsed.repo || ''} ${parsed.subpath || ''}`;
             for (const [rel, f] of treeMap.entries()) {
                 const rl = rel.toLowerCase();
                 gh3dLowerPathMap.set(rl, { rel, f });
