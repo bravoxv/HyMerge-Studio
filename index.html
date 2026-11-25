@@ -6825,14 +6825,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     let animData = null;
                     if (hycreatorDataSource === 'github3d' || !isElectron) {
-                        const ghEntry = gh3dRepoMap && gh3dRepoMap.get(selectedPath);
+                        const ghEntry = findGh3dRepoEntry(selectedPath);
                         if (ghEntry && gh3dParsedRepo) {
                             const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
                             animData = await readGithubBlobWeb({
                                 owner: gh3dParsedRepo.owner,
                                 repo: gh3dParsedRepo.repo,
-                                sha: ghEntry.sha,
-                                name: selectedPath,
+                                sha: ghEntry.f.sha,
+                                name: ghEntry.rel,
                                 token
                             });
                         }
@@ -7499,6 +7499,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return { name, isMedia: false, content: decodeBase64Utf8(rawB64) };
     }
 
+    function findGh3dRepoEntry(relPath) {
+        if (!relPath || typeof relPath !== 'string') return null;
+        const clean = relPath.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase();
+        const candidates = [clean, `common/${clean}`, `assets/common/${clean}`, `server/${clean}`, `assets/server/${clean}`];
+        for (const c of candidates) {
+            if (gh3dLowerPathMap.has(c)) return gh3dLowerPathMap.get(c);
+        }
+        return null;
+    }
+
     function classify3dGithubItem(relPath, fullPath, repoHint = '') {
         const lower = relPath.toLowerCase();
         const fullLower = (fullPath || relPath).toLowerCase();
@@ -7507,9 +7517,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return { kind: 'Prefabs', name };
         }
         if (lower.endsWith('.blockymodel') || lower.endsWith('.model') || lower.endsWith('.bbmodel')) {
-            if (fullLower.includes('creature') || fullLower.includes('npc') || fullLower.includes('character') || fullLower.includes('mob')) return { kind: 'Creatures', name };
-            if (fullLower.includes('item') || fullLower.includes('weapon') || fullLower.includes('tool') || fullLower.includes('armor')) return { kind: 'Item', name };
             return { kind: 'blockymodel', name };
+        }
+        if (lower.endsWith('.json')) {
+            if (fullLower.includes('/models/') || fullLower.startsWith('models/') || fullLower.includes('server/models/')) {
+                return { kind: 'Creatures', name: name.replace(/\.json$/i, '') };
+            }
+            if (fullLower.includes('/item/items/') || fullLower.startsWith('item/items/') || fullLower.includes('server/item/items/')) {
+                return { kind: 'Item', name: name.replace(/\.json$/i, '') };
+            }
         }
         return null;
     }
@@ -7600,34 +7616,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function resolveGithub3dAsset(item) {
         const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
-        const res = await readGithubBlobWeb({ owner: gh3dParsedRepo.owner, repo: gh3dParsedRepo.repo, sha: item.sha, name: item.name, token });
+        const { owner, repo, ref } = gh3dParsedRepo;
+        const res = await readGithubBlobWeb({ owner, repo, sha: item.sha, name: item.name, token });
         const content = res.content || '';
-        let textureDataUrl = null;
-        let texturePath = null;
 
-        let parsedKind = item.kind === 'Prefabs' ? 'prefab' : 'blockymodel';
-        let finalContent = content;
-        let explicitTexPath = null;
-        try {
-            const parsedJson = JSON.parse(content);
-            if (parsedJson && !parsedJson.blocks && Array.isArray(parsedJson.Blocks)) {
-                parsedJson.blocks = parsedJson.Blocks;
-                finalContent = JSON.stringify(parsedJson);
+        async function getTexDataOrUrl(texRelPath) {
+            const entry = findGh3dRepoEntry(texRelPath);
+            if (!entry) return null;
+            if (!token) {
+                return { dataUrl: `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${entry.f.path}`, rel: entry.rel };
             }
-            if (parsedJson && typeof (parsedJson.Texture || parsedJson.texture) === 'string') {
-                explicitTexPath = (parsedJson.Texture || parsedJson.texture).replace(/\\/g, '/').toLowerCase();
+            try {
+                const blob = await readGithubBlobWeb({ owner, repo, sha: entry.f.sha, name: entry.rel, token });
+                return blob.dataUrl ? { dataUrl: blob.dataUrl, rel: entry.rel } : null;
+            } catch (_) {
+                return null;
             }
-            if (parsedJson && Array.isArray(parsedJson.blocks)) parsedKind = 'prefab';
-            else if (parsedJson && Array.isArray(parsedJson.nodes)) parsedKind = 'blockymodel';
-            else if (parsedJson && Array.isArray(parsedJson.elements)) parsedKind = 'blockbench';
-        } catch (_) {}
+        }
 
-        if (parsedKind !== 'prefab') {
-            const baseNoExt = item.rel.replace(/\.[^/.]+$/, '').toLowerCase();
-            const dirPrefix = item.rel.includes('/') ? item.rel.slice(0, item.rel.lastIndexOf('/') + 1).toLowerCase() : '';
+        function findAutoTextureForModelRel(modelRel) {
+            const baseNoExt = modelRel.replace(/\.[^/.]+$/, '').toLowerCase();
+            const dirPrefix = modelRel.includes('/') ? modelRel.slice(0, modelRel.lastIndexOf('/') + 1).toLowerCase() : '';
             const parentDirPrefix = dirPrefix.replace(/[^/]+\/$/, '');
             const isAuxMap = (rl) => /(_normal|_bump|_roughness|_metallic|_specular|_emissive|_mask|_ao|icon|preview)\.png$/i.test(rl);
-
             const exactCandidates = [
                 baseNoExt + '_texture.png',
                 baseNoExt + '.png',
@@ -7635,75 +7646,239 @@ document.addEventListener('DOMContentLoaded', () => {
                 baseNoExt + '_active_texture.png',
                 baseNoExt + '_inactive_texture.png'
             ];
-
-            let texEntry = null;
-            // 0. Textura explícita declarada en el JSON
-            if (explicitTexPath) {
+            for (const cand of exactCandidates) {
+                const hit = findGh3dRepoEntry(cand);
+                if (hit) return hit;
+            }
+            const texFolders = [
+                baseNoExt + '_textures/',
+                dirPrefix + 'model_textures/',
+                dirPrefix + 'textures/',
+                parentDirPrefix + 'textures/',
+                parentDirPrefix + 'model_textures/'
+            ].filter(Boolean);
+            for (const tf of texFolders) {
+                const list = [];
                 for (const [rel, f] of gh3dRepoMap.entries()) {
                     const rl = rel.toLowerCase();
-                    if (rl === explicitTexPath || rl.endsWith('/' + explicitTexPath)) {
-                        texEntry = { rel, f };
-                        break;
+                    if (rl.endsWith('.png') && (rl.startsWith(tf) || rl.startsWith('common/' + tf)) && !isAuxMap(rl)) {
+                        list.push({ rel, f, rl });
                     }
                 }
-            }
-            // 1. Coincidencia exacta junto al modelo (ej. Model_Texture.png, Model.png)
-            if (!texEntry) {
-                for (const cand of exactCandidates) {
-                    for (const [rel, f] of gh3dRepoMap.entries()) {
-                        if (rel.toLowerCase() === cand) {
-                            texEntry = { rel, f };
-                            break;
-                        }
-                    }
-                    if (texEntry) break;
+                if (list.length > 0) {
+                    list.sort((a, b) => {
+                        const aS = (a.rl.includes('texture') || a.rl.includes('skin') || a.rl.includes('base')) ? 0 : 1;
+                        const bS = (b.rl.includes('texture') || b.rl.includes('skin') || b.rl.includes('base')) ? 0 : 1;
+                        return aS - bS || a.rel.localeCompare(b.rel);
+                    });
+                    return { rel: list[0].rel, f: list[0].f };
                 }
             }
-            // 2. Fallback en subcarpeta Model_Textures/ o Textures/ dentro de Models/ o carpeta padre
-            if (!texEntry) {
-                const texFolders = [
-                    baseNoExt + '_textures/',
-                    dirPrefix + 'model_textures/',
-                    dirPrefix + 'textures/',
-                    parentDirPrefix + 'textures/',
-                    parentDirPrefix + 'model_textures/'
-                ].filter(Boolean);
-                for (const tf of texFolders) {
-                    const candidatesInFolder = [];
-                    for (const [rel, f] of gh3dRepoMap.entries()) {
-                        const rl = rel.toLowerCase();
-                        if (rl.endsWith('.png') && rl.startsWith(tf) && !isAuxMap(rl)) {
-                            candidatesInFolder.push({ rel, f, rl });
-                        }
-                    }
-                    if (candidatesInFolder.length > 0) {
-                        candidatesInFolder.sort((a, b) => {
-                            const aScore = (a.rl.includes('texture') || a.rl.includes('skin') || a.rl.includes('base')) ? 0 : 1;
-                            const bScore = (b.rl.includes('texture') || b.rl.includes('skin') || b.rl.includes('base')) ? 0 : 1;
-                            return aScore - bScore || a.rel.localeCompare(b.rel);
-                        });
-                        texEntry = { rel: candidatesInFolder[0].rel, f: candidatesInFolder[0].f };
-                        break;
-                    }
-                }
-            }
-            // 3. Fallback: .png en la MISMA carpeta (sin entrar a Attachments/ y excluyendo mapas auxiliares)
-            if (!texEntry && dirPrefix) {
+            if (dirPrefix) {
                 for (const [rel, f] of gh3dRepoMap.entries()) {
                     const rl = rel.toLowerCase();
                     if (!rl.endsWith('.png') || isAuxMap(rl)) continue;
-                    if (rl.startsWith(dirPrefix) && !rl.slice(dirPrefix.length).includes('/')) {
-                        texEntry = { rel, f };
-                        break;
-                    }
+                    if (rl.startsWith(dirPrefix) && !rl.slice(dirPrefix.length).includes('/')) return { rel, f };
                 }
             }
+            return null;
+        }
+
+        let parsedJson = null;
+        try { parsedJson = JSON.parse(content); } catch (_) {}
+
+        // --- CASO A: JSON de Criatura/Modelo/Item (Server/Models/*.json o Server/Item/Items/*.json) ---
+        if (parsedJson && !Array.isArray(parsedJson.blocks) && !Array.isArray(parsedJson.Blocks) && !Array.isArray(parsedJson.nodes) && !Array.isArray(parsedJson.elements)) {
+            // Resolver herencia Parent (ej. Bear_Grizzly_Voidtaken2 -> Bear_Grizzly)
+            const parentName = parsedJson.Parent || parsedJson.parent;
+            if (parentName && typeof parentName === 'string') {
+                const parentBase = parentName.replace(/\.json$/i, '');
+                const currentDir = item.rel.includes('/') ? item.rel.slice(0, item.rel.lastIndexOf('/')) : '';
+                const parentCandidates = [
+                    `${currentDir}/${parentBase}.json`,
+                    `Models/${parentBase}.json`,
+                    `Models/Beast/${parentBase}.json`,
+                    `Server/Models/${parentBase}.json`,
+                    `Server/Models/Beast/${parentBase}.json`,
+                    `Item/Items/${parentBase}.json`,
+                    `Server/Item/Items/${parentBase}.json`
+                ];
+                let parentEntry = null;
+                for (const pc of parentCandidates) {
+                    parentEntry = findGh3dRepoEntry(pc);
+                    if (parentEntry) break;
+                }
+                if (!parentEntry) {
+                    // Búsqueda por nombre de archivo exacto en Models/ o Item/Items/
+                    const targetJson = (parentBase + '.json').toLowerCase();
+                    for (const [rel, f] of gh3dRepoMap.entries()) {
+                        const rl = rel.toLowerCase();
+                        if (rl.endsWith('/' + targetJson) && (rl.includes('models/') || rl.includes('items/'))) {
+                            parentEntry = { rel, f };
+                            break;
+                        }
+                    }
+                }
+                if (parentEntry) {
+                    try {
+                        const pBlob = await readGithubBlobWeb({ owner, repo, sha: parentEntry.f.sha, name: parentEntry.rel, token });
+                        const pData = JSON.parse(pBlob.content || '{}');
+                        if (!parsedJson.Model && !parsedJson.model && (pData.Model || pData.model)) parsedJson.Model = pData.Model || pData.model;
+                        if (!parsedJson.Texture && !parsedJson.texture && (pData.Texture || pData.texture)) parsedJson.Texture = pData.Texture || pData.texture;
+                        if (Array.isArray(pData.DefaultAttachments) && (!parsedJson.DefaultAttachments || parsedJson.DefaultAttachments.length === 0)) {
+                            parsedJson.DefaultAttachments = [...pData.DefaultAttachments];
+                        }
+                        if (pData.AnimationSets && (!parsedJson.AnimationSets || Object.keys(parsedJson.AnimationSets).length === 0)) {
+                            parsedJson.AnimationSets = { ...pData.AnimationSets };
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            const modelRef = parsedJson.Model || parsedJson.model || (parsedJson.PlayerAnimationsId ? null : null);
+            if (modelRef && typeof modelRef === 'string') {
+                const modelEntry = findGh3dRepoEntry(modelRef);
+                if (modelEntry) {
+                    const mBlob = await readGithubBlobWeb({ owner, repo, sha: modelEntry.f.sha, name: modelEntry.rel, token });
+                    const texRef = parsedJson.Texture || parsedJson.texture;
+                    let texRes = texRef ? await getTexDataOrUrl(texRef) : null;
+                    if (!texRes) {
+                        const autoTex = findAutoTextureForModelRel(modelEntry.rel);
+                        if (autoTex) texRes = await getTexDataOrUrl(autoTex.rel);
+                    }
+
+                    // Cargar Attachments (DefaultAttachments + 1ra opción de RandomAttachmentSets)
+                    const attachmentsToLoad = [];
+                    if (Array.isArray(parsedJson.DefaultAttachments)) {
+                        for (const att of parsedJson.DefaultAttachments) {
+                            if (att && att.Model) attachmentsToLoad.push(att);
+                        }
+                    }
+                    if (parsedJson.RandomAttachmentSets && typeof parsedJson.RandomAttachmentSets === 'object') {
+                        for (const catOptions of Object.values(parsedJson.RandomAttachmentSets)) {
+                            if (catOptions && typeof catOptions === 'object') {
+                                for (const optData of Object.values(catOptions)) {
+                                    if (optData && optData.Model) { attachmentsToLoad.push(optData); break; }
+                                }
+                            }
+                        }
+                    }
+
+                    const loadedAttachments = (await Promise.all(attachmentsToLoad.map(async (att) => {
+                        try {
+                            const attModelEntry = findGh3dRepoEntry(att.Model);
+                            if (!attModelEntry) return null;
+                            const [attModelBlob, attTexRes] = await Promise.all([
+                                readGithubBlobWeb({ owner, repo, sha: attModelEntry.f.sha, name: attModelEntry.rel, token }),
+                                att.Texture ? getTexDataOrUrl(att.Texture) : Promise.resolve(null)
+                            ]);
+                            let finalAttTex = attTexRes;
+                            if (!finalAttTex) {
+                                const autoAttTex = findAutoTextureForModelRel(attModelEntry.rel);
+                                if (autoAttTex) finalAttTex = await getTexDataOrUrl(autoAttTex.rel);
+                            }
+                            if (attModelBlob && attModelBlob.content) {
+                                return {
+                                    modelRel: att.Model,
+                                    modelContent: attModelBlob.content,
+                                    textureDataUrl: finalAttTex ? finalAttTex.dataUrl : null,
+                                    texturePath: att.Texture || (finalAttTex ? finalAttTex.rel : null)
+                                };
+                            }
+                        } catch (_) {}
+                        return null;
+                    }))).filter(Boolean);
+
+                    // Extraer AnimationSets
+                    const animations = [];
+                    if (parsedJson.AnimationSets && typeof parsedJson.AnimationSets === 'object') {
+                        for (const [setName, setData] of Object.entries(parsedJson.AnimationSets)) {
+                            if (setData && Array.isArray(setData.Animations)) {
+                                for (const animItem of setData.Animations) {
+                                    if (animItem && animItem.Animation) {
+                                        animations.push({ name: setName, path: animItem.Animation, speed: animItem.Speed || 1 });
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    let defaultAnimContent = null;
+                    let defaultAnimName = null;
+                    const idleEntry = animations.find(a => a.name.toLowerCase() === 'idle') || animations[0];
+                    if (idleEntry) {
+                        const animRepoEntry = findGh3dRepoEntry(idleEntry.path);
+                        if (animRepoEntry) {
+                            try {
+                                const aBlob = await readGithubBlobWeb({ owner, repo, sha: animRepoEntry.f.sha, name: animRepoEntry.rel, token });
+                                if (aBlob && aBlob.content) {
+                                    defaultAnimContent = aBlob.content;
+                                    defaultAnimName = idleEntry.name;
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
+                    return {
+                        kind: 'blockymodel',
+                        rel_path: item.rel,
+                        referencedModelRel: modelRef,
+                        modelContent: mBlob.content,
+                        content: mBlob.content,
+                        size_bytes: item.size || (mBlob.content || '').length,
+                        textureDataUrl: texRes ? texRes.dataUrl : null,
+                        texturePath: texRes ? texRes.rel : null,
+                        attachments: loadedAttachments,
+                        animations,
+                        defaultAnimContent,
+                        defaultAnimName
+                    };
+                }
+            }
+
+            // Si es un Item con Icon pero sin Model 3D
+            const iconRef = parsedJson.Icon || parsedJson.icon;
+            if (iconRef && typeof iconRef === 'string') {
+                const iconRes = await getTexDataOrUrl(iconRef);
+                if (iconRes && iconRes.dataUrl) {
+                    return {
+                        kind: 'item_icon',
+                        rel_path: item.rel,
+                        iconDataUrl: iconRes.dataUrl,
+                        size_bytes: item.size || content.length
+                    };
+                }
+            }
+        }
+
+        // --- CASO B: Archivo directo (.prefab.json, .blockymodel, .bbmodel) ---
+        let textureDataUrl = null;
+        let texturePath = null;
+        let parsedKind = item.kind === 'Prefabs' ? 'prefab' : 'blockymodel';
+        let finalContent = content;
+        let explicitTexPath = null;
+        if (parsedJson) {
+            if (!parsedJson.blocks && Array.isArray(parsedJson.Blocks)) {
+                parsedJson.blocks = parsedJson.Blocks;
+                finalContent = JSON.stringify(parsedJson);
+            }
+            if (typeof (parsedJson.Texture || parsedJson.texture) === 'string') {
+                explicitTexPath = (parsedJson.Texture || parsedJson.texture).replace(/\\/g, '/').toLowerCase();
+            }
+            if (Array.isArray(parsedJson.blocks)) parsedKind = 'prefab';
+            else if (Array.isArray(parsedJson.nodes)) parsedKind = 'blockymodel';
+            else if (Array.isArray(parsedJson.elements)) parsedKind = 'blockbench';
+        }
+
+        if (parsedKind !== 'prefab') {
+            let texEntry = explicitTexPath ? findGh3dRepoEntry(explicitTexPath) : null;
+            if (!texEntry) texEntry = findAutoTextureForModelRel(item.rel);
             if (texEntry) {
-                texturePath = texEntry.rel;
-                try {
-                    const texBlob = await readGithubBlobWeb({ owner: gh3dParsedRepo.owner, repo: gh3dParsedRepo.repo, sha: texEntry.f.sha, name: texEntry.rel, token });
-                    textureDataUrl = texBlob.dataUrl || null;
-                } catch (_) {}
+                const texRes = await getTexDataOrUrl(texEntry.rel);
+                if (texRes) {
+                    textureDataUrl = texRes.dataUrl;
+                    texturePath = texRes.rel;
+                }
             }
         }
 
@@ -9367,6 +9542,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         if (att.textureDataUrl) {
                             const attImg = new Image();
+                            attImg.crossOrigin = 'anonymous';
                             attImg.onload = () => {
                                 const aTex = new THREE.Texture(attImg);
                                 aTex.magFilter = THREE.NearestFilter;
@@ -9404,6 +9580,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (textureDataUrl) {
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.onload = () => {
                 const tex = new THREE.Texture(img);
                 tex.magFilter = THREE.NearestFilter;
@@ -9424,6 +9601,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Renderizar Sprite 2D de Item en Espacio 3D
     function renderItemIcon3D(iconDataUrl, name) {
         const img = new Image();
+        img.crossOrigin = 'anonymous';
         img.onload = () => {
             const tex = new THREE.Texture(img);
             tex.magFilter = THREE.NearestFilter;
