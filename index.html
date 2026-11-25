@@ -7445,6 +7445,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchGithubTreeMapWeb(parsed, token) {
         const { owner, repo, ref, subpath } = parsed;
+
+        async function collectTreeRecursive(treeSha, basePrefix, map, depth = 0) {
+            const data = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${treeSha}?recursive=1`, token);
+            if (!data.truncated || depth >= 3) {
+                for (const entry of (data.tree || [])) {
+                    if (entry.type !== 'blob') continue;
+                    const full = basePrefix ? `${basePrefix}/${entry.path}` : entry.path;
+                    map.set(full, { path: full, sha: entry.sha, size: entry.size || 0 });
+                }
+                return;
+            }
+            const shallow = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${treeSha}`, token);
+            for (const entry of (shallow.tree || [])) {
+                const full = basePrefix ? `${basePrefix}/${entry.path}` : entry.path;
+                if (entry.type === 'blob') {
+                    map.set(full, { path: full, sha: entry.sha, size: entry.size || 0 });
+                } else if (entry.type === 'tree') {
+                    await collectTreeRecursive(entry.sha, full, map, depth + 1);
+                }
+            }
+        }
+
         if (subpath) {
             try {
                 const rootTree = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`, token);
@@ -7459,26 +7481,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     else currentTree = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${match.sha}`, token);
                 }
                 if (resolvedSubSha) {
-                    const subData = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${resolvedSubSha}?recursive=1`, token);
+                    const rawMap = new Map();
+                    await collectTreeRecursive(resolvedSubSha, '', rawMap, 0);
                     const map = new Map();
-                    for (const entry of (subData.tree || [])) {
-                        if (entry.type === 'blob') map.set(entry.path, { path: `${subpath}/${entry.path}`, sha: entry.sha, size: entry.size || 0 });
+                    for (const [relPath, info] of rawMap.entries()) {
+                        map.set(relPath, { path: `${subpath}/${info.path}`, sha: info.sha, size: info.size });
                     }
                     return map;
                 }
             } catch (_) {}
         }
-        const data = await githubApiGetWeb(`/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, token);
+
+        const fullMap = new Map();
+        await collectTreeRecursive(encodeURIComponent(ref), '', fullMap, 0);
+        if (!subpath) return fullMap;
+
         const map = new Map();
-        const prefix = subpath ? `${subpath}/` : '';
-        for (const entry of (data.tree || [])) {
-            if (entry.type !== 'blob') continue;
-            if (prefix) {
-                if (!entry.path.startsWith(prefix)) continue;
-                map.set(entry.path.slice(prefix.length), { path: entry.path, sha: entry.sha, size: entry.size || 0 });
-            } else {
-                map.set(entry.path, { path: entry.path, sha: entry.sha, size: entry.size || 0 });
-            }
+        const prefix = `${subpath}/`;
+        for (const [entryPath, info] of fullMap.entries()) {
+            if (!entryPath.startsWith(prefix)) continue;
+            map.set(entryPath.slice(prefix.length), info);
         }
         return map;
     }
@@ -7536,6 +7558,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return { kind: 'blockymodel', name };
         }
         if (lower.endsWith('.json')) {
+            if ((fullLower.includes('/prefabs/') || fullLower.startsWith('prefabs/')) && !name.toLowerCase().includes('session')) {
+                return { kind: 'Prefabs', name };
+            }
             if (fullLower.includes('/models/') || fullLower.startsWith('models/') || fullLower.includes('server/models/')) {
                 return { kind: 'Creatures', name: name.replace(/\.json$/i, '') };
             }
