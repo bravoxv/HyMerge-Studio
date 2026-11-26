@@ -8089,6 +8089,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let drawType = null;
             let color = null;
             let hitboxType = null;
+            let hitboxSize = null; // {x, y, z} en unidades de bloque
+            let hitboxOffset = null; // {x, y, z} offset de la hitbox respecto al origen del bloque
             let customModelContent = null;
             let customModelScale = 1.0;
 
@@ -8125,6 +8127,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         color = bt.TextureComputedColor || bt.ParticleColor || null;
                         drawType = bt.DrawType || null;
                         hitboxType = bt.HitboxType || null;
+
+                        // Leer tamaño y offset de hitbox si existe (para slabs, escaleras, etc.)
+                        if (bt.Hitbox && typeof bt.Hitbox === 'object') {
+                            const hb = bt.Hitbox;
+                            if (hb.Size && typeof hb.Size === 'object') {
+                                hitboxSize = { x: hb.Size.x || 1, y: hb.Size.y || 1, z: hb.Size.z || 1 };
+                            }
+                            if (hb.Offset && typeof hb.Offset === 'object') {
+                                hitboxOffset = { x: hb.Offset.x || 0, y: hb.Offset.y || 0, z: hb.Offset.z || 0 };
+                            }
+                        } else if (bt.HitboxSize && typeof bt.HitboxSize === 'object') {
+                            hitboxSize = { x: bt.HitboxSize.x || 1, y: bt.HitboxSize.y || 1, z: bt.HitboxSize.z || 1 };
+                        }
                         if (Array.isArray(bt.Tint) && bt.Tint[0]) tint = bt.Tint[0];
                         else if (typeof bt.Tint === 'string') tint = bt.Tint;
                         else if (Array.isArray(bt.TintUp) && bt.TintUp[0]) tint = bt.TintUp[0];
@@ -8211,7 +8226,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const info = { dataUrl, faces, tint, drawType, color, hitboxType, customModelContent, customModelScale };
+            const info = { dataUrl, faces, tint, drawType, color, hitboxType, hitboxSize, hitboxOffset, customModelContent, customModelScale };
             gh3dBlockTexCache.set(cacheKey, info);
             result[blockName] = info;
         }));
@@ -9160,10 +9175,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
+            const ht = String((blockInfo && blockInfo.hitboxType) || '').toLowerCase();
+            const isHalfSlab = !useCross && (ht.includes('slab') || ht.includes('half') || /(_half|_slab)$/i.test(blockName));
+
+            // Tamaño real del bloque según hitbox (default 1x1x1)
+            const hbSize = (blockInfo && blockInfo.hitboxSize) || null;
+            const hbOffset = (blockInfo && blockInfo.hitboxOffset) || null;
+            const bsx = hbSize ? Math.max(0.1, hbSize.x) : 1.0;
+            const bsy = hbSize ? Math.max(0.1, hbSize.y) : (isHalfSlab ? 0.5 : 1.0);
+            const bsz = hbSize ? Math.max(0.1, hbSize.z) : 1.0;
+            const boxOffY = hbOffset ? hbOffset.y : (isHalfSlab ? -0.25 : 0);
+
+            // Reutilizar la geometría estándar solo si el bloque es exactamente 1x1x1
+            const isStdSize = Math.abs(bsx - 1) < 0.01 && Math.abs(bsy - 1) < 0.01 && Math.abs(bsz - 1) < 0.01;
             let targetGeo = cubeGeo;
             if (useCross) {
                 if (!crossGeo) crossGeo = createCrossedFoliageGeometry();
                 targetGeo = crossGeo;
+            } else if (!isStdSize) {
+                targetGeo = new THREE.BoxGeometry(bsx, bsy, bsz);
             }
 
             const instancedMesh = new THREE.InstancedMesh(targetGeo, mat, blockList.length);
@@ -9173,20 +9203,29 @@ document.addEventListener('DOMContentLoaded', () => {
             instancedMesh.userData.blockList = blockList;
             instancedMesh.userData.prefabCenter = { centerX, baseY, centerZ };
 
-            const ht = String((blockInfo && blockInfo.hitboxType) || '').toLowerCase();
-            const isHalfSlab = !useCross && (ht.includes('slab') || ht.includes('half') || /(_half|_slab)$/i.test(blockName));
             const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
             const tmpQuat = new THREE.Quaternion();
             const tmpPos = new THREE.Vector3();
-            const tmpScale = new THREE.Vector3(1, isHalfSlab ? 0.5 : 1, 1);
+            const tmpScale = new THREE.Vector3(1, 1, 1);
             for (let i = 0; i < blockList.length; i++) {
                 const b = blockList[i];
-                tmpPos.set(b.x - centerX, b.y - baseY + (isHalfSlab ? 0.25 : 0.5), b.z - centerZ);
+                tmpPos.set(
+                    b.x - centerX,
+                    b.y - baseY + 0.5 * bsy + boxOffY,
+                    b.z - centerZ
+                );
                 if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                    const yaw = b.rotation & 3;
+                    const yaw   = (b.rotation) & 3;
                     const pitch = (b.rotation >> 2) & 3;
-                    const roll = (b.rotation >> 4) & 3;
-                    tmpEuler.set(-(pitch * Math.PI) / 2, (yaw * Math.PI) / 2, -(roll * Math.PI) / 2);
+                    const roll  = (b.rotation >> 4) & 3;
+                    // Hytale: yaw=CW visto desde arriba → Three.js Y negativo
+                    // pitch=inclinación hacia adelante → Three.js X positivo
+                    // roll=inclinación lateral → Three.js Z negativo
+                    tmpEuler.set(
+                        (pitch * Math.PI) / 2,
+                        -(yaw * Math.PI) / 2,
+                        -(roll * Math.PI) / 2
+                    );
                     tmpQuat.setFromEuler(tmpEuler);
                 } else {
                     tmpQuat.identity();
