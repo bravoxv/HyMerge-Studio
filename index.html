@@ -8848,6 +8848,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderBlockBreakdown(sortedTypes);
 
+        // ── DEBUG: volcar valores únicos de rotación por tipo de bloque ──
+        {
+            const rotStats = {};
+            for (const b of activeBlocks) {
+                if (typeof b.rotation === 'number' && b.rotation !== 0) {
+                    const key = b.name || 'unknown';
+                    if (!rotStats[key]) rotStats[key] = {};
+                    rotStats[key][b.rotation] = (rotStats[key][b.rotation] || 0) + 1;
+                }
+            }
+            if (Object.keys(rotStats).length > 0) {
+                console.group('[Prefab Rotation Debug]');
+                for (const [bname, rots] of Object.entries(rotStats)) {
+                    const vals = Object.entries(rots).map(([r, c]) => `rot=${r}(x${c})`).join(', ');
+                    console.log(`  ${bname}: ${vals}`);
+                }
+                console.groupEnd();
+            }
+        }
+
         // Geometría con dimensión EXACTA de 1 bloque voxel (1.0 x 1.0 x 1.0)
         // Bloques contiguos encajan perfectamente sin grietas
         const cubeGeo = new THREE.BoxGeometry(1.0, 1.0, 1.0);
@@ -9057,30 +9077,31 @@ document.addEventListener('DOMContentLoaded', () => {
         // ── 24 orientaciones de cubo (grupo octaédrico propio) ──────────────
         // Hytale codifica la rotación como un índice 0-23:
         //   face = floor(rot / 4)  →  0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X
-        //   twist = rot % 4        →  0°, 90°, 180°, 270° alrededor del eje de la cara
+        //   twist = rot % 4        →  0°, -90°, -180°, -270° alrededor del eje local Y (CW desde arriba)
         // Generamos la tabla de quaterniones una sola vez.
         const _hytaleRotQuats = (function () {
             const quats = new Array(24);
             const PI2 = Math.PI / 2;
-            // Rotaciones de cara: llevan +Y (arriba por defecto) a la cara indicada
+            // Rotaciones de cara: llevan +Y local a la dirección indicada
+            // Verificación: Rx(-90°) → Y→+Z; Rx(+90°) → Y→-Z; Rz(+90°) → Y→+X; Rz(-90°) → Y→-X
             const faceEulers = [
                 [0, 0, 0],        // 0: +Y arriba (identidad)
                 [Math.PI, 0, 0],  // 1: -Y arriba (volteo 180° en X)
-                [PI2, 0, 0],      // 2: +Z arriba (pitch 90° → frente apunta abajo)
-                [-PI2, 0, 0],     // 3: -Z arriba (pitch -90°)
-                [0, 0, -PI2],     // 4: +X arriba (roll -90°)
-                [0, 0, PI2]       // 5: -X arriba (roll 90°)
+                [-PI2, 0, 0],     // 2: +Z arriba (pitch -90°: Y→+Z)
+                [PI2, 0, 0],      // 3: -Z arriba (pitch +90°: Y→-Z)
+                [0, 0, PI2],      // 4: +X arriba (roll +90°: Y→+X)
+                [0, 0, -PI2]      // 5: -X arriba (roll -90°: Y→-X)
             ];
             for (let face = 0; face < 6; face++) {
                 const fQ = new THREE.Quaternion().setFromEuler(
                     new THREE.Euler(faceEulers[face][0], faceEulers[face][1], faceEulers[face][2], 'XYZ')
                 );
                 for (let twist = 0; twist < 4; twist++) {
-                    // Giro alrededor del eje local Y (ya reorientado por la cara)
+                    // Giro CW desde arriba alrededor del eje local Y → negativo en Three.js
                     const tQ = new THREE.Quaternion().setFromAxisAngle(
-                        new THREE.Vector3(0, 1, 0), twist * PI2
+                        new THREE.Vector3(0, 1, 0), -(twist * PI2)
                     );
-                    // face primero, luego twist en espacio local → face * twist
+                    // Composición intrínseca: face primero, luego twist en espacio local
                     quats[face * 4 + twist] = fQ.clone().multiply(tQ);
                 }
             }
