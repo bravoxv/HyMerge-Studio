@@ -8053,7 +8053,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(([name]) => name);
 
         const { owner, repo, ref } = gh3dParsedRepo;
-        const repoKey = `${owner}/${repo}@${ref}::v3::`;
+        const repoKey = `${owner}/${repo}@${ref}::v4::`;
 
         function findRepoEntry(relPath) {
             return findGh3dRepoEntry(relPath);
@@ -9080,11 +9080,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const inst = i === 0 ? proto : proto.clone();
                                 inst.position.set(b.x - centerX, b.y - baseY, b.z - centerZ);
                                 if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                                    const yaw = b.rotation & 3;
-                                    const pitch = (b.rotation >> 2) & 3;
-                                    const roll = (b.rotation >> 4) & 3;
+                                    // Hytale: yaw en sentido horario (CW desde arriba)
+                                    // = dirección positiva de Y en Three.js
                                     inst.rotation.order = 'YXZ';
-                                    inst.rotation.set(-(pitch * Math.PI) / 2, (yaw * Math.PI) / 2, -(roll * Math.PI) / 2);
+                                    inst.rotation.y = (b.rotation % 4) * (Math.PI / 2);
                                 }
                                 inst.userData.blockName = blockName;
                                 inst.userData.blockData = b;
@@ -9215,17 +9214,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     b.z - centerZ
                 );
                 if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                    const yaw   = (b.rotation) & 3;
-                    const pitch = (b.rotation >> 2) & 3;
-                    const roll  = (b.rotation >> 4) & 3;
-                    // Hytale: yaw=CW visto desde arriba → Three.js Y negativo
-                    // pitch=inclinación hacia adelante → Three.js X positivo
-                    // roll=inclinación lateral → Three.js Z negativo
-                    tmpEuler.set(
-                        (pitch * Math.PI) / 2,
-                        -(yaw * Math.PI) / 2,
-                        -(roll * Math.PI) / 2
-                    );
+                    // Hytale yaw: 0=N, 1=E(CW), 2=S, 3=W
+                    // En Three.js Y positivo es CCW (igual que matemático).
+                    // CW desde arriba = negativo en Three.js.
+                    // Usar b.rotation % 4 como yaw puro (sin pitch/roll).
+                    tmpEuler.set(0, -((b.rotation % 4) * Math.PI) / 2, 0);
                     tmpQuat.setFromEuler(tmpEuler);
                 } else {
                     tmpQuat.identity();
