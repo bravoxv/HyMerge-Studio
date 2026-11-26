@@ -7,7 +7,7 @@
     <title>HyMerge Studio — Hytale Asset & Diff Explorer</title>
     
     <meta name="description"
-        content="HyCreator Studio: explorador profesional de assets, modelos 3D, prefabs y texturas de Hytale con vista en árbol jerárquico y comparador de archivos.">
+        content="HyMerge Studio: explorador profesional de assets, modelos 3D, prefabs y texturas de Hytale con vista en árbol jerárquico y comparador de archivos.">
 
     <!-- Fuentes Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,7 +17,7 @@
         rel="stylesheet">
 
     <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@1.72.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 
     <style>
@@ -103,7 +103,7 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   HEADER PRINCIPAL — HyCreator Studio (58px premium)
+   HEADER PRINCIPAL — HyMerge Studio (58px premium)
    -------------------------------------------------------------------------- */
 .app-header {
     height: 58px;
@@ -4473,7 +4473,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } else {
-            alert('Para examinar carpetas reales del sistema, ejecuta la aplicación WinMerge Modern.');
+            alert('Para examinar carpetas reales del sistema, usa la versión de escritorio de HyMerge Studio.');
         }
     }
 
@@ -4498,8 +4498,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!rightFolderPath) return;
         }
 
-        btnAnalyzeFolders.disabled = true;
-        btnAnalyzeFolders.innerHTML = `<i data-lucide="loader" class="spin"></i> <span>Comparando...</span>`;
+        if (btnAnalyzeFolders) btnAnalyzeFolders.disabled = true;
+        if (btnAnalyzeFolders) btnAnalyzeFolders.innerHTML = `<i data-lucide="loader" class="spin"></i> <span>Comparando...</span>`;
         if (window.lucide) lucide.createIcons();
 
         if (statusDot) statusDot.className = 'status-indicator busy';
@@ -4534,8 +4534,10 @@ document.addEventListener('DOMContentLoaded', () => {
             footerMessage.textContent = 'Error al comparar carpetas.';
         } finally {
             if (unlisten) unlisten();
-            btnAnalyzeFolders.disabled = false;
-            btnAnalyzeFolders.innerHTML = `<i data-lucide="git-compare"></i> <span>Comparar Carpetas</span>`;
+            if (btnAnalyzeFolders) {
+                btnAnalyzeFolders.disabled = false;
+                btnAnalyzeFolders.innerHTML = `<i data-lucide="git-compare"></i> <span>Comparar Carpetas</span>`;
+            }
             if (window.lucide) lucide.createIcons();
             if (statusDot) statusDot.className = 'status-indicator ready';
         }
@@ -5338,7 +5340,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedFolderItem = item;
 
         const isMediaItem = item.isMedia || item.isImage || isImage(item.relativePath);
-        const ghToken = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
+        const ghToken = (document.getElementById('gh-token-input')?.value || sessionStorage.getItem('hycreator_gh_token') || '').trim();
 
         if (isMediaItem) {
             let leftUrl = null;
@@ -5555,7 +5557,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isElectron) {
             const res = await window.electronAPI.openDialog({
                 mode: 'file',
-                title: `WinMerge Modern - Abrir Archivo para Panel ${side === 'left' ? 'Original (Izquierdo)' : 'Modificado (Derecho)'}`
+                title: `HyMerge Studio - Abrir Archivo para Panel ${side === 'left' ? 'Original (Izquierdo)' : 'Modificado (Derecho)'}`
             });
             if (res && !res.error) {
                 if (res.isMedia) {
@@ -6100,24 +6102,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- ACCIONES DE COMPARACION UNIFICADA ---
     if (btnAnalyzeFolders) btnAnalyzeFolders.addEventListener('click', triggerFoldersComparison);
 
-    const btnToggleGithub = document.getElementById('btn-toggle-github-compare');
     const githubComparePanel = document.getElementById('github-compare-panel');
     const ghLeftUrlInput = document.getElementById('gh-left-url');
     const ghRightUrlInput = document.getElementById('gh-right-url');
     const ghTokenInput = document.getElementById('gh-token-input');
     const btnCompareGithub = document.getElementById('btn-compare-github');
 
+    try { localStorage.removeItem('hycreator_gh_token'); } catch (_) {}
     if (ghTokenInput) {
-        const savedToken = localStorage.getItem('hycreator_gh_token');
+        const savedToken = sessionStorage.getItem('hycreator_gh_token');
         if (savedToken) ghTokenInput.value = savedToken;
         ghTokenInput.addEventListener('change', () => {
-            localStorage.setItem('hycreator_gh_token', ghTokenInput.value.trim());
-        });
-    }
-
-    if (btnToggleGithub && githubComparePanel) {
-        btnToggleGithub.addEventListener('click', () => {
-            githubComparePanel.classList.toggle('hidden');
+            const val = ghTokenInput.value.trim();
+            if (val) sessionStorage.setItem('hycreator_gh_token', val);
+            else sessionStorage.removeItem('hycreator_gh_token');
         });
     }
 
@@ -6130,7 +6128,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Ingresa los dos links de GitHub (Original y Modificado) para comparar.');
                 return;
             }
-            if (token) localStorage.setItem('hycreator_gh_token', token);
+            if (token) sessionStorage.setItem('hycreator_gh_token', token);
             
 
             btnCompareGithub.disabled = true;
@@ -6828,7 +6826,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (hycreatorDataSource === 'github3d' || !isElectron) {
                         const ghEntry = findGh3dRepoEntry(selectedPath);
                         if (ghEntry && gh3dParsedRepo) {
-                            const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
+                            const token = (document.getElementById('gh-token-input')?.value || sessionStorage.getItem('hycreator_gh_token') || '').trim();
                             animData = await readGithubBlobWeb({
                                 owner: gh3dParsedRepo.owner,
                                 repo: gh3dParsedRepo.repo,
@@ -7621,7 +7619,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const spinner = document.getElementById('models3d-loading-spinner');
         const listEl = document.getElementById('models3d-item-list');
         const btnLoad = document.getElementById('btn-3d-load-gh');
-        const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
+        const token = (document.getElementById('gh-token-input')?.value || sessionStorage.getItem('hycreator_gh_token') || '').trim();
 
         if (!repoUrl || !repoUrl.trim()) {
             showToast3D('Ingresa la URL de un repositorio de GitHub', false);
@@ -7703,7 +7701,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function resolveGithub3dAsset(item) {
-        const token = (document.getElementById('gh-token-input')?.value || localStorage.getItem('hycreator_gh_token') || '').trim();
+        const token = (document.getElementById('gh-token-input')?.value || sessionStorage.getItem('hycreator_gh_token') || '').trim();
         const { owner, repo, ref } = gh3dParsedRepo;
         const res = await readGithubBlobWeb({ owner, repo, sha: item.sha, path: item.fullPath, ref, name: item.name, token });
         const content = res.content || '';
@@ -8053,7 +8051,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(([name]) => name);
 
         const { owner, repo, ref } = gh3dParsedRepo;
-        const repoKey = `${owner}/${repo}@${ref}::v4::`;
+        const repoKey = `${owner}/${repo}@${ref}::v5::`;
 
         function findRepoEntry(relPath) {
             return findGh3dRepoEntry(relPath);
@@ -8071,6 +8069,43 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (_) {
                 return null;
             }
+        }
+
+        // Herencia completa de BlockType: Parent -> Parent -> ... (el hijo sobrescribe al padre; objetos se fusionan, arrays se reemplazan)
+        const _itemJsonCache = new Map();
+        function _isPlainObj(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+        function _deepMerge(base, over) {
+            const out = { ...base };
+            for (const k of Object.keys(over || {})) {
+                out[k] = (_isPlainObj(out[k]) && _isPlainObj(over[k])) ? _deepMerge(out[k], over[k]) : over[k];
+            }
+            return out;
+        }
+        function _readItemJson(entry) {
+            let pr = _itemJsonCache.get(entry.rel);
+            if (!pr) {
+                pr = readGithubBlobWeb({ owner, repo, sha: entry.f.sha, path: entry.f.path, ref, name: entry.rel, token })
+                    .then(blob => JSON.parse(blob.content || '{}'))
+                    .catch(() => ({}));
+                _itemJsonCache.set(entry.rel, pr);
+            }
+            return pr;
+        }
+        async function loadMergedBlockType(entry, depth = 0, seen = new Set()) {
+            if (!entry || depth > 8 || seen.has(entry.rel)) return null;
+            seen.add(entry.rel);
+            const data = await _readItemJson(entry);
+            let bt = data.BlockType || null;
+            const parentId = data.Parent || data.parent;
+            if (parentId) {
+                const parentBase = String(parentId).replace(/\.json$/i, '').split('/').pop().toLowerCase();
+                const pEntry = gh3dItemJsonMap.get(parentBase);
+                if (pEntry) {
+                    const pbt = await loadMergedBlockType(pEntry, depth + 1, seen);
+                    if (pbt) bt = _deepMerge(pbt, bt || {});
+                }
+            }
+            return bt;
         }
 
         const result = {};
@@ -8104,24 +8139,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (itemEntry) {
                 try {
-                    const itemBlob = await readGithubBlobWeb({ owner, repo, sha: itemEntry.f.sha, path: itemEntry.f.path, ref, name: itemEntry.rel, token });
-                    const itemData = JSON.parse(itemBlob.content || '{}');
-                    let bt = itemData.BlockType;
-
-                    // Herencia Parent para BlockType
-                    if ((!bt || (!bt.Textures && !bt.CustomModelTexture && !bt.CustomModel)) && (itemData.Parent || itemData.parent)) {
-                        const parentBase = String(itemData.Parent || itemData.parent).replace(/\.json$/i, '').toLowerCase();
-                        const parentEntry = gh3dItemJsonMap.get(parentBase);
-                        if (parentEntry) {
-                            try {
-                                const pBlob = await readGithubBlobWeb({ owner, repo, sha: parentEntry.f.sha, path: parentEntry.f.path, ref, name: parentEntry.rel, token });
-                                const pData = JSON.parse(pBlob.content || '{}');
-                                if (pData.BlockType) {
-                                    bt = { ...pData.BlockType, ...(bt || {}) };
-                                }
-                            } catch (_) {}
-                        }
-                    }
+                    const bt = await loadMergedBlockType(itemEntry);
 
                     if (bt) {
                         color = bt.TextureComputedColor || bt.ParticleColor || null;
@@ -8165,22 +8183,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         const texObj = Array.isArray(bt.Textures) ? bt.Textures[0] : (bt.Textures && typeof bt.Textures === 'object' ? bt.Textures : null);
                         if (!dataUrl && texObj) {
-                            const allPath = texObj.All;
-                            const topPath = texObj.Top || texObj.Up || texObj.UpDown;
-                            const bottomPath = texObj.Bottom || texObj.Down || texObj.UpDown;
-                            const sidesPath = texObj.Sides || texObj.Side || texObj.North || texObj.Front || texObj.South || texObj.East || texObj.West;
-                            if (topPath && sidesPath && topPath !== sidesPath) {
-                                const [topUrl, sidesUrl, bottomUrl] = await Promise.all([
-                                    getTexUrl(topPath),
-                                    getTexUrl(sidesPath),
-                                    bottomPath ? getTexUrl(bottomPath) : Promise.resolve(null)
-                                ]);
+                            const allPath = texObj.All || null;
+                            const upPath = texObj.Top || texObj.Up || texObj.UpDown || null;
+                            const downPath = texObj.Bottom || texObj.Down || texObj.UpDown || null;
+                            const sideGeneric = texObj.Sides || texObj.Side || null;
+                            // Hytale: East = +X, West = -X, South = +Z, North = -Z
+                            const rawSides = {
+                                east: texObj.East || sideGeneric,
+                                west: texObj.West || sideGeneric,
+                                south: texObj.South || texObj.Back || sideGeneric,
+                                north: texObj.North || texObj.Front || sideGeneric
+                            };
+                            const anySide = rawSides.south || rawSides.north || rawSides.east || rawSides.west || allPath;
+                            const sidePaths = {
+                                east: rawSides.east || anySide, west: rawSides.west || anySide,
+                                south: rawSides.south || anySide, north: rawSides.north || anySide
+                            };
+                            const distinctSides = new Set(Object.values(sidePaths).filter(Boolean));
+                            const topPath = upPath || allPath || anySide;
+                            const bottomPath = downPath || allPath || anySide;
+                            if (distinctSides.size > 1 || (topPath && anySide && topPath !== anySide)) {
+                                const wanted = new Set([topPath, bottomPath, ...distinctSides].filter(Boolean));
+                                const urlMap = new Map();
+                                await Promise.all(Array.from(wanted).map(async (pth) => { urlMap.set(pth, await getTexUrl(pth)); }));
+                                const u = (pth) => (pth ? urlMap.get(pth) : null) || null;
+                                const sidesUrl = u(sidePaths.south) || u(sidePaths.north) || u(sidePaths.east) || u(sidePaths.west);
+                                const topUrl = u(topPath);
                                 if (topUrl || sidesUrl) {
                                     dataUrl = sidesUrl || topUrl;
-                                    faces = { top: topUrl || sidesUrl, sides: sidesUrl || topUrl, bottom: bottomUrl || sidesUrl || topUrl };
+                                    faces = {
+                                        top: topUrl || sidesUrl,
+                                        sides: sidesUrl || topUrl,
+                                        bottom: u(bottomPath) || sidesUrl || topUrl,
+                                        east: u(sidePaths.east) || sidesUrl || topUrl,
+                                        west: u(sidePaths.west) || sidesUrl || topUrl,
+                                        south: u(sidePaths.south) || sidesUrl || topUrl,
+                                        north: u(sidePaths.north) || sidesUrl || topUrl,
+                                        perFace: distinctSides.size > 1
+                                    };
                                 }
                             } else {
-                                const texPath = allPath || sidesPath || topPath || bottomPath;
+                                const texPath = allPath || anySide || topPath || bottomPath;
                                 if (texPath) dataUrl = await getTexUrl(texPath);
                             }
                         }
@@ -8781,7 +8824,10 @@ document.addEventListener('DOMContentLoaded', () => {
             name: b.name || b.id || b.type || b.block || 'Stone',
             x: Number(b.x ?? 0),
             y: Number(b.y ?? 0),
-            z: Number(b.z ?? 0)
+            z: Number(b.z ?? 0),
+            // Rotación: valor de 6 bits (yaw | pitch<<2 | roll<<4). Filler != 0 = celda secundaria de un bloque multi-celda
+            rotation: Number(b.rotation ?? b.Rotation ?? 0) || 0,
+            filler: Number(b.filler ?? b.Filler ?? 0) || 0
         }));
 
         // Omitir bloques de aire o vacíos para que las habitaciones, interiores y ventanas sean visibles
@@ -8811,6 +8857,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (b.y > maxY) maxY = b.y;
             if (b.z < minZ) minZ = b.z;
             if (b.z > maxZ) maxZ = b.z;
+
+            // Los filler son celdas extra de bloques grandes (puertas, camas, props): el modelo se dibuja una sola vez en el bloque base
+            if (b.filler) continue;
 
             countMap.set(b.name, (countMap.get(b.name) || 0) + 1);
 
@@ -8847,26 +8896,6 @@ document.addEventListener('DOMContentLoaded', () => {
             .sort((a, b) => b.count - a.count);
 
         renderBlockBreakdown(sortedTypes);
-
-        // ── DEBUG: volcar valores únicos de rotación por tipo de bloque ──
-        {
-            const rotStats = {};
-            for (const b of activeBlocks) {
-                if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                    const key = b.name || 'unknown';
-                    if (!rotStats[key]) rotStats[key] = {};
-                    rotStats[key][b.rotation] = (rotStats[key][b.rotation] || 0) + 1;
-                }
-            }
-            if (Object.keys(rotStats).length > 0) {
-                console.group('[Prefab Rotation Debug]');
-                for (const [bname, rots] of Object.entries(rotStats)) {
-                    const vals = Object.entries(rots).map(([r, c]) => `rot=${r}(x${c})`).join(', ');
-                    console.log(`  ${bname}: ${vals}`);
-                }
-                console.groupEnd();
-            }
-        }
 
         // Geometría con dimensión EXACTA de 1 bloque voxel (1.0 x 1.0 x 1.0)
         // Bloques contiguos encajan perfectamente sin grietas
@@ -8931,7 +8960,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!window._hyThreeTextureCache) window._hyThreeTextureCache = new Map();
         const texCache = window._hyThreeTextureCache;
 
-        function getOrCreateTexture(dataUrl) {
+        function getOrCreateTexture(dataUrl, fallbackHex) {
             let tex = texCache.get(dataUrl);
             if (!tex) {
                 const img = new Image();
@@ -8941,6 +8970,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 tex.minFilter = THREE.NearestFilter;
                 if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
                 img.onload = () => { tex.needsUpdate = true; };
+                // Si la imagen no carga (404, CORS, ruta mal escrita) usar un color liso en vez de dejar el bloque negro
+                img.onerror = () => {
+                    const c = document.createElement('canvas');
+                    c.width = c.height = 2;
+                    const g = c.getContext('2d');
+                    const hex = (typeof fallbackHex === 'number') ? fallbackHex : 0x8a6a4a;
+                    g.fillStyle = '#' + (hex >>> 0).toString(16).padStart(6, '0');
+                    g.fillRect(0, 0, 2, 2);
+                    tex.image = c;
+                    tex.userData.failed = true;
+                    tex.needsUpdate = true;
+                };
                 img.src = dataUrl;
                 texCache.set(dataUrl, tex);
             }
@@ -9074,42 +9115,32 @@ document.addEventListener('DOMContentLoaded', () => {
             return proto;
         }
 
-        // ── 24 orientaciones de cubo (grupo octaédrico propio) ──────────────
-        // Hytale codifica la rotación como un índice 0-23:
-        //   face = floor(rot / 4)  →  0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X
-        //   twist = rot % 4        →  0°, -90°, -180°, -270° alrededor del eje local Y (CW desde arriba)
-        // Generamos la tabla de quaterniones una sola vez.
+        // ── Rotaciones de bloque Hytale ─────────────────────────────────────
+        // El valor es de 6 bits: yaw = bits 0-1, pitch = bits 2-3, roll = bits 4-5 (cada eje en pasos de 90°).
+        //   yaw = giro alrededor de Y, pitch = alrededor de X, roll = alrededor de Z.
+        // Convención ajustable desde la consola del navegador (y volver a abrir el prefab):
+        //   window.hyRotationConfig = { order: 'YXZ', yaw: -1, pitch: -1, roll: -1 }
+        //   order = orden de composición (de más externo a más interno); yaw/pitch/roll = sentido (+1 / -1).
+        const _rotCfg = Object.assign({ order: 'YXZ', yaw: -1, pitch: -1, roll: -1 }, window.hyRotationConfig || {});
         const _hytaleRotQuats = (function () {
-            const quats = new Array(24);
+            const quats = new Array(64);
             const PI2 = Math.PI / 2;
-            // Rotaciones de cara: llevan +Y local a la dirección indicada
-            // Verificación: Rx(-90°) → Y→+Z; Rx(+90°) → Y→-Z; Rz(+90°) → Y→+X; Rz(-90°) → Y→-X
-            const faceEulers = [
-                [0, 0, 0],        // 0: +Y arriba (identidad)
-                [Math.PI, 0, 0],  // 1: -Y arriba (volteo 180° en X)
-                [-PI2, 0, 0],     // 2: +Z arriba (pitch -90°: Y→+Z)
-                [PI2, 0, 0],      // 3: -Z arriba (pitch +90°: Y→-Z)
-                [0, 0, PI2],      // 4: +X arriba (roll +90°: Y→+X)
-                [0, 0, -PI2]      // 5: -X arriba (roll -90°: Y→-X)
-            ];
-            for (let face = 0; face < 6; face++) {
-                const fQ = new THREE.Quaternion().setFromEuler(
-                    new THREE.Euler(faceEulers[face][0], faceEulers[face][1], faceEulers[face][2], 'XYZ')
-                );
-                for (let twist = 0; twist < 4; twist++) {
-                    // Giro CW desde arriba alrededor del eje local Y → negativo en Three.js
-                    const tQ = new THREE.Quaternion().setFromAxisAngle(
-                        new THREE.Vector3(0, 1, 0), -(twist * PI2)
-                    );
-                    // Composición intrínseca: face primero, luego twist en espacio local
-                    quats[face * 4 + twist] = fQ.clone().multiply(tQ);
+            const axes = { X: new THREE.Vector3(1, 0, 0), Y: new THREE.Vector3(0, 1, 0), Z: new THREE.Vector3(0, 0, 1) };
+            for (let rot = 0; rot < 64; rot++) {
+                const steps = { Y: rot & 3, X: (rot >> 2) & 3, Z: (rot >> 4) & 3 };
+                const sign = { Y: _rotCfg.yaw, X: _rotCfg.pitch, Z: _rotCfg.roll };
+                const q = new THREE.Quaternion();
+                for (const ax of String(_rotCfg.order).toUpperCase()) {
+                    if (!axes[ax]) continue;
+                    q.multiply(new THREE.Quaternion().setFromAxisAngle(axes[ax], sign[ax] * steps[ax] * PI2));
                 }
+                quats[rot] = q;
             }
             return quats;
         })();
         function getBlockRotationQuat(rotIdx) {
-            if (typeof rotIdx !== 'number' || rotIdx <= 0) return null;
-            const idx = rotIdx % 24;
+            const idx = (Number(rotIdx) || 0) & 63;
+            if (idx === 0) return null;
             return _hytaleRotQuats[idx] || null;
         }
 
@@ -9137,9 +9168,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             for (let i = 0; i < maxInstances; i++) {
                                 const b = blockList[i];
                                 const inst = i === 0 ? proto : proto.clone();
-                                inst.position.set(b.x - centerX, b.y - baseY, b.z - centerZ);
                                 const cmQ = getBlockRotationQuat(b.rotation);
-                                if (cmQ) inst.quaternion.copy(cmQ);
+                                if (cmQ) {
+                                    // El bloque rota alrededor del centro de su celda (el origen del modelo está en la base)
+                                    inst.quaternion.copy(cmQ);
+                                    const off = new THREE.Vector3(0, -0.5, 0).applyQuaternion(cmQ);
+                                    inst.position.set(b.x - centerX + off.x, b.y - baseY + 0.5 + off.y, b.z - centerZ + off.z);
+                                } else {
+                                    // Resetear siempre: proto.clone() hereda la rotación del primer bloque
+                                    inst.quaternion.identity();
+                                    inst.position.set(b.x - centerX, b.y - baseY, b.z - centerZ);
+                                }
                                 inst.userData.blockName = blockName;
                                 inst.userData.blockData = b;
                                 inst.userData.prefabCenter = { centerX, baseY, centerZ };
@@ -9148,13 +9187,18 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
 
                         if (blockInfo.dataUrl) {
-                            const tex = getOrCreateTexture(blockInfo.dataUrl);
+                            const tex = getOrCreateTexture(blockInfo.dataUrl, getHytaleBlockColor(blockName));
                             const img = tex.image;
-                            if (img && img.complete && img.naturalWidth > 0) {
+                            if (tex.userData && tex.userData.failed) {
+                                placeInstances(null, 0, 0);
+                            } else if (img && img.complete && img.naturalWidth > 0) {
                                 placeInstances(tex, img.naturalWidth, img.naturalHeight);
                             } else if (img) {
                                 img.addEventListener('load', () => {
                                     placeInstances(tex, img.naturalWidth, img.naturalHeight);
+                                }, { once: true });
+                                img.addEventListener('error', () => {
+                                    placeInstances(null, 0, 0);
                                 }, { once: true });
                             } else {
                                 placeInstances(null, 0, 0);
@@ -9173,8 +9217,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!useCross && blockInfo && blockInfo.faces && blockInfo.faces.top && blockInfo.faces.sides) {
                 const tintHex = parseTintColor(blockInfo);
+                const fbColor = getHytaleBlockColor(blockName);
+                const mkSideMat = (url) => new THREE.MeshStandardMaterial({
+                    map: getOrCreateTexture(url, fbColor),
+                    roughness: 0.78,
+                    metalness: 0.08,
+                    transparent: true,
+                    alphaTest: 0.1,
+                    wireframe: threeWireframe
+                });
                 const topMat = new THREE.MeshStandardMaterial({
-                    map: getOrCreateTexture(blockInfo.faces.top),
+                    map: getOrCreateTexture(blockInfo.faces.top, fbColor),
                     color: tintHex || 0xffffff,
                     roughness: 0.78,
                     metalness: 0.08,
@@ -9182,26 +9235,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     alphaTest: 0.1,
                     wireframe: threeWireframe
                 });
-                const sideMat = new THREE.MeshStandardMaterial({
-                    map: getOrCreateTexture(blockInfo.faces.sides),
-                    roughness: 0.78,
-                    metalness: 0.08,
-                    transparent: true,
-                    alphaTest: 0.1,
-                    wireframe: threeWireframe
-                });
+                const sideMat = mkSideMat(blockInfo.faces.sides);
                 const bottomMat = blockInfo.faces.bottom && blockInfo.faces.bottom !== blockInfo.faces.sides
                     ? new THREE.MeshStandardMaterial({
-                        map: getOrCreateTexture(blockInfo.faces.bottom),
+                        map: getOrCreateTexture(blockInfo.faces.bottom, fbColor),
                         roughness: 0.8,
                         metalness: 0.05,
                         wireframe: threeWireframe
                     })
                     : sideMat;
                 // Orden BoxGeometry: +X, -X, +Y (top), -Y (bottom), +Z, -Z
-                mat = [sideMat, sideMat, topMat, bottomMat, sideMat, sideMat];
+                if (blockInfo.faces.perFace) {
+                    const f = blockInfo.faces;
+                    mat = [mkSideMat(f.east || f.sides), mkSideMat(f.west || f.sides), topMat, bottomMat,
+                           mkSideMat(f.south || f.sides), mkSideMat(f.north || f.sides)];
+                } else {
+                    mat = [sideMat, sideMat, topMat, bottomMat, sideMat, sideMat];
+                }
             } else if (blockInfo && blockInfo.dataUrl) {
-                const tex = getOrCreateTexture(blockInfo.dataUrl);
+                const tex = getOrCreateTexture(blockInfo.dataUrl, getHytaleBlockColor(blockName));
                 const tintHex = (isLeaf || useCross) ? parseTintColor(blockInfo) : null;
                 mat = new THREE.MeshStandardMaterial({
                     map: tex,
@@ -9238,7 +9290,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const bsx = hbSize ? Math.max(0.1, hbSize.x) : 1.0;
             const bsy = hbSize ? Math.max(0.1, hbSize.y) : (isHalfSlab ? 0.5 : 1.0);
             const bsz = hbSize ? Math.max(0.1, hbSize.z) : 1.0;
-            const boxOffY = hbOffset ? hbOffset.y : (isHalfSlab ? -0.25 : 0);
+            const boxOffY = hbOffset ? hbOffset.y : 0;  // la caja ya se apoya en la base de la celda (0.5 * bsy)
 
             // Reutilizar la geometría estándar solo si el bloque es exactamente 1x1x1
             const isStdSize = Math.abs(bsx - 1) < 0.01 && Math.abs(bsy - 1) < 0.01 && Math.abs(bsz - 1) < 0.01;
@@ -9262,17 +9314,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const tmpScale = new THREE.Vector3(1, 1, 1);
             for (let i = 0; i < blockList.length; i++) {
                 const b = blockList[i];
-                tmpPos.set(
-                    b.x - centerX,
-                    b.y - baseY + 0.5 * bsy + boxOffY,
-                    b.z - centerZ
-                );
                 const bQ = getBlockRotationQuat(b.rotation);
+                // Desplazamiento de la caja respecto al centro de la celda; rota junto con el bloque
+                const localOff = new THREE.Vector3(
+                    (!useCross && hbOffset) ? hbOffset.x : 0,
+                    -0.5 + 0.5 * bsy + boxOffY,
+                    (!useCross && hbOffset) ? hbOffset.z : 0
+                );
                 if (bQ) {
                     tmpQuat.copy(bQ);
+                    localOff.applyQuaternion(bQ);
                 } else {
                     tmpQuat.identity();
                 }
+                tmpPos.set(
+                    b.x - centerX + localOff.x,
+                    b.y - baseY + 0.5 + localOff.y,
+                    b.z - centerZ + localOff.z
+                );
                 matrix.compose(tmpPos, tmpQuat, tmpScale);
                 instancedMesh.setMatrixAt(i, matrix);
             }
