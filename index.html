@@ -9054,6 +9054,44 @@ document.addEventListener('DOMContentLoaded', () => {
             return proto;
         }
 
+        // ── 24 orientaciones de cubo (grupo octaédrico propio) ──────────────
+        // Hytale codifica la rotación como un índice 0-23:
+        //   face = floor(rot / 4)  →  0:+Y, 1:-Y, 2:+Z, 3:-Z, 4:+X, 5:-X
+        //   twist = rot % 4        →  0°, 90°, 180°, 270° alrededor del eje de la cara
+        // Generamos la tabla de quaterniones una sola vez.
+        const _hytaleRotQuats = (function () {
+            const quats = new Array(24);
+            const PI2 = Math.PI / 2;
+            // Rotaciones de cara: llevan +Y (arriba por defecto) a la cara indicada
+            const faceEulers = [
+                [0, 0, 0],        // 0: +Y arriba (identidad)
+                [Math.PI, 0, 0],  // 1: -Y arriba (volteo 180° en X)
+                [PI2, 0, 0],      // 2: +Z arriba (pitch 90° → frente apunta abajo)
+                [-PI2, 0, 0],     // 3: -Z arriba (pitch -90°)
+                [0, 0, -PI2],     // 4: +X arriba (roll -90°)
+                [0, 0, PI2]       // 5: -X arriba (roll 90°)
+            ];
+            for (let face = 0; face < 6; face++) {
+                const fQ = new THREE.Quaternion().setFromEuler(
+                    new THREE.Euler(faceEulers[face][0], faceEulers[face][1], faceEulers[face][2], 'XYZ')
+                );
+                for (let twist = 0; twist < 4; twist++) {
+                    // Giro alrededor del eje local Y (ya reorientado por la cara)
+                    const tQ = new THREE.Quaternion().setFromAxisAngle(
+                        new THREE.Vector3(0, 1, 0), twist * PI2
+                    );
+                    // face primero, luego twist en espacio local → face * twist
+                    quats[face * 4 + twist] = fQ.clone().multiply(tQ);
+                }
+            }
+            return quats;
+        })();
+        function getBlockRotationQuat(rotIdx) {
+            if (typeof rotIdx !== 'number' || rotIdx <= 0) return null;
+            const idx = rotIdx % 24;
+            return _hytaleRotQuats[idx] || null;
+        }
+
         // Renderizar por tipo de bloque con su textura, modelo 3D, caras múltiples o follaje orgánico
         blocksByType.forEach((blockList, blockName) => {
             const blockInfo = blockTextures && blockTextures[blockName];
@@ -9079,12 +9117,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const b = blockList[i];
                                 const inst = i === 0 ? proto : proto.clone();
                                 inst.position.set(b.x - centerX, b.y - baseY, b.z - centerZ);
-                                if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                                    // Hytale: yaw en sentido horario (CW desde arriba)
-                                    // = dirección positiva de Y en Three.js
-                                    inst.rotation.order = 'YXZ';
-                                    inst.rotation.y = (b.rotation % 4) * (Math.PI / 2);
-                                }
+                                const cmQ = getBlockRotationQuat(b.rotation);
+                                if (cmQ) inst.quaternion.copy(cmQ);
                                 inst.userData.blockName = blockName;
                                 inst.userData.blockData = b;
                                 inst.userData.prefabCenter = { centerX, baseY, centerZ };
@@ -9202,7 +9236,6 @@ document.addEventListener('DOMContentLoaded', () => {
             instancedMesh.userData.blockList = blockList;
             instancedMesh.userData.prefabCenter = { centerX, baseY, centerZ };
 
-            const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
             const tmpQuat = new THREE.Quaternion();
             const tmpPos = new THREE.Vector3();
             const tmpScale = new THREE.Vector3(1, 1, 1);
@@ -9213,13 +9246,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     b.y - baseY + 0.5 * bsy + boxOffY,
                     b.z - centerZ
                 );
-                if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                    // Hytale yaw: 0=N, 1=E(CW), 2=S, 3=W
-                    // En Three.js Y positivo es CCW (igual que matemático).
-                    // CW desde arriba = negativo en Three.js.
-                    // Usar b.rotation % 4 como yaw puro (sin pitch/roll).
-                    tmpEuler.set(0, -((b.rotation % 4) * Math.PI) / 2, 0);
-                    tmpQuat.setFromEuler(tmpEuler);
+                const bQ = getBlockRotationQuat(b.rotation);
+                if (bQ) {
+                    tmpQuat.copy(bQ);
                 } else {
                     tmpQuat.identity();
                 }
