@@ -8049,11 +8049,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const topBlocks = Array.from(blockCounts.entries())
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 60)
+            .slice(0, 200)
             .map(([name]) => name);
 
         const { owner, repo, ref } = gh3dParsedRepo;
-        const repoKey = `${owner}/${repo}@${ref}::v2::`;
+        const repoKey = `${owner}/${repo}@${ref}::v3::`;
 
         function findRepoEntry(relPath) {
             return findGh3dRepoEntry(relPath);
@@ -8142,6 +8142,22 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const cmBlob = await readGithubBlobWeb({ owner, repo, sha: cmEntry.f.sha, path: cmEntry.f.path, ref, name: cmEntry.rel, token });
                                     if (cmBlob && cmBlob.content) customModelContent = cmBlob.content;
                                 } catch (_) {}
+                                if (!dataUrl) {
+                                    const cmBase = cmEntry.rel.replace(/\.[^/.]+$/, '').toLowerCase();
+                                    const cmDir = cmEntry.rel.includes('/') ? cmEntry.rel.slice(0, cmEntry.rel.lastIndexOf('/') + 1).toLowerCase() : '';
+                                    for (const ac of [cmBase + '_texture.png', cmBase + '.png', cmBase + '_greyscale.png']) {
+                                        const u = await getTexUrl(ac);
+                                        if (u) { dataUrl = u; break; }
+                                    }
+                                    if (!dataUrl && cmDir) {
+                                        for (const [rl, val] of gh3dLowerPathMap.entries()) {
+                                            if (rl.startsWith(cmDir) && rl.endsWith('.png') && !/(_normal|_bump|_roughness|_metallic|_specular|_emissive|_mask|_ao|icon|preview)\.png$/i.test(rl)) {
+                                                dataUrl = await getTexUrl(val.rel);
+                                                if (dataUrl) break;
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -9045,7 +9061,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                 const inst = i === 0 ? proto : proto.clone();
                                 inst.position.set(b.x - centerX, b.y - baseY, b.z - centerZ);
                                 if (typeof b.rotation === 'number' && b.rotation !== 0) {
-                                    inst.rotation.y = -(b.rotation * Math.PI) / 2;
+                                    const yaw = b.rotation & 3;
+                                    const pitch = (b.rotation >> 2) & 3;
+                                    const roll = (b.rotation >> 4) & 3;
+                                    inst.rotation.order = 'YXZ';
+                                    inst.rotation.set((pitch * Math.PI) / 2, (yaw * Math.PI) / 2, (roll * Math.PI) / 2);
                                 }
                                 inst.userData.blockName = blockName;
                                 inst.userData.blockData = b;
@@ -9149,9 +9169,23 @@ document.addEventListener('DOMContentLoaded', () => {
             instancedMesh.userData.blockList = blockList;
             instancedMesh.userData.prefabCenter = { centerX, baseY, centerZ };
 
+            const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+            const tmpQuat = new THREE.Quaternion();
+            const tmpPos = new THREE.Vector3();
+            const tmpScale = new THREE.Vector3(1, 1, 1);
             for (let i = 0; i < blockList.length; i++) {
                 const b = blockList[i];
-                matrix.setPosition(b.x - centerX, b.y - baseY + 0.5, b.z - centerZ);
+                tmpPos.set(b.x - centerX, b.y - baseY + 0.5, b.z - centerZ);
+                if (typeof b.rotation === 'number' && b.rotation !== 0) {
+                    const yaw = b.rotation & 3;
+                    const pitch = (b.rotation >> 2) & 3;
+                    const roll = (b.rotation >> 4) & 3;
+                    tmpEuler.set((pitch * Math.PI) / 2, (yaw * Math.PI) / 2, (roll * Math.PI) / 2);
+                    tmpQuat.setFromEuler(tmpEuler);
+                } else {
+                    tmpQuat.identity();
+                }
+                matrix.compose(tmpPos, tmpQuat, tmpScale);
                 instancedMesh.setMatrixAt(i, matrix);
             }
 
