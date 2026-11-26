@@ -3814,6 +3814,7 @@ body {
                             <span>🖱️ Clic Izq: Rotar / Seleccionar Bloque</span>
                             <span>🔍 Rueda: Zoom</span>
                             <span>🖱️ Clic Der / Shift: Desplazar</span>
+                            <span>⌨️ Flechas: Mover cámara</span>
                         </div>
                         <div class="bg-selector">
                             <span class="bg-label">Fondo:</span>
@@ -7169,6 +7170,26 @@ document.addEventListener('DOMContentLoaded', () => {
             updateCameraPosition();
         }, { passive: false });
 
+        // Movimiento de cámara estilo espectador con flechas del teclado
+        const threeKeysPressed = new Set();
+        const spectatorKeys = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown']);
+        window.addEventListener('keydown', (e) => {
+            const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable)) return;
+            if (!container || container.offsetParent === null || container.clientWidth === 0) return;
+            if (e.key === 'Shift') { threeKeysPressed.add('Shift'); return; }
+            if (spectatorKeys.has(e.key)) {
+                e.preventDefault();
+                threeKeysPressed.add(e.key);
+                if (e.shiftKey) threeKeysPressed.add('Shift');
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') threeKeysPressed.delete('Shift');
+            threeKeysPressed.delete(e.key);
+        });
+        window.addEventListener('blur', () => threeKeysPressed.clear());
+
         
         // Resize Observer
         const resizeObs = new ResizeObserver(() => {
@@ -7183,8 +7204,27 @@ document.addEventListener('DOMContentLoaded', () => {
         resizeObs.observe(container);
 
         // Bucle de renderizado y animación
-        function animate() {
+        let lastFrameTime = performance.now();
+        function animate(now = performance.now()) {
             threeAnimFrameId = requestAnimationFrame(animate);
+            const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+            lastFrameTime = now;
+
+            if (threeKeysPressed.size > 0 && threeCamera && threeCameraTarget && container && container.offsetParent !== null) {
+                const sprint = threeKeysPressed.has('Shift') ? 2.5 : 1;
+                const speed = Math.max(8, threeDistance * 0.85) * sprint * dt;
+                const forward = new THREE.Vector3().subVectors(threeCameraTarget, threeCamera.position).normalize();
+                const right = new THREE.Vector3().crossVectors(forward, threeCamera.up).normalize();
+                let moved = false;
+                if (threeKeysPressed.has('ArrowUp')) { threeCameraTarget.addScaledVector(forward, speed); moved = true; }
+                if (threeKeysPressed.has('ArrowDown')) { threeCameraTarget.addScaledVector(forward, -speed); moved = true; }
+                if (threeKeysPressed.has('ArrowRight')) { threeCameraTarget.addScaledVector(right, speed); moved = true; }
+                if (threeKeysPressed.has('ArrowLeft')) { threeCameraTarget.addScaledVector(right, -speed); moved = true; }
+                if (threeKeysPressed.has('PageUp')) { threeCameraTarget.y += speed; moved = true; }
+                if (threeKeysPressed.has('PageDown')) { threeCameraTarget.y -= speed; moved = true; }
+                if (moved) updateCameraPosition();
+            }
+
             if (threeAutoRotate && !threeIsDragging) {
                 threeRotation.theta += 0.008;
                 updateCameraPosition();
@@ -7567,9 +7607,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return { kind: 'blockymodel', name };
         }
         if (lower.endsWith('.json')) {
-            if ((fullLower.includes('/prefabs/') || fullLower.startsWith('prefabs/')) && !name.toLowerCase().includes('session')) {
-                return { kind: 'Prefabs', name };
-            }
             if (fullLower.includes('/models/') || fullLower.startsWith('models/') || fullLower.includes('server/models/')) {
                 return { kind: 'Creatures', name: name.replace(/\.json$/i, '') };
             }
