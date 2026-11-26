@@ -8088,6 +8088,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let tint = null;
             let drawType = null;
             let color = null;
+            let hitboxType = null;
             let customModelContent = null;
             let customModelScale = 1.0;
 
@@ -8123,6 +8124,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (bt) {
                         color = bt.TextureComputedColor || bt.ParticleColor || null;
                         drawType = bt.DrawType || null;
+                        hitboxType = bt.HitboxType || null;
                         if (Array.isArray(bt.Tint) && bt.Tint[0]) tint = bt.Tint[0];
                         else if (typeof bt.Tint === 'string') tint = bt.Tint;
                         else if (Array.isArray(bt.TintUp) && bt.TintUp[0]) tint = bt.TintUp[0];
@@ -8132,32 +8134,17 @@ document.addEventListener('DOMContentLoaded', () => {
                             dataUrl = await getTexUrl(bt.CustomModelTexture[0].Texture);
                         }
 
+                        let cmEntry = null;
                         if (bt.CustomModel && typeof bt.CustomModel === 'string') {
                             if (typeof bt.CustomModelScale === 'number' && bt.CustomModelScale > 0) {
                                 customModelScale = bt.CustomModelScale;
                             }
-                            const cmEntry = findRepoEntry(bt.CustomModel);
+                            cmEntry = findRepoEntry(bt.CustomModel);
                             if (cmEntry) {
                                 try {
                                     const cmBlob = await readGithubBlobWeb({ owner, repo, sha: cmEntry.f.sha, path: cmEntry.f.path, ref, name: cmEntry.rel, token });
                                     if (cmBlob && cmBlob.content) customModelContent = cmBlob.content;
                                 } catch (_) {}
-                                if (!dataUrl) {
-                                    const cmBase = cmEntry.rel.replace(/\.[^/.]+$/, '').toLowerCase();
-                                    const cmDir = cmEntry.rel.includes('/') ? cmEntry.rel.slice(0, cmEntry.rel.lastIndexOf('/') + 1).toLowerCase() : '';
-                                    for (const ac of [cmBase + '_texture.png', cmBase + '.png', cmBase + '_greyscale.png']) {
-                                        const u = await getTexUrl(ac);
-                                        if (u) { dataUrl = u; break; }
-                                    }
-                                    if (!dataUrl && cmDir) {
-                                        for (const [rl, val] of gh3dLowerPathMap.entries()) {
-                                            if (rl.startsWith(cmDir) && rl.endsWith('.png') && !/(_normal|_bump|_roughness|_metallic|_specular|_emissive|_mask|_ao|icon|preview)\.png$/i.test(rl)) {
-                                                dataUrl = await getTexUrl(val.rel);
-                                                if (dataUrl) break;
-                                            }
-                                        }
-                                    }
-                                }
                             }
                         }
 
@@ -8180,6 +8167,23 @@ document.addEventListener('DOMContentLoaded', () => {
                             } else {
                                 const texPath = allPath || sidesPath || topPath || bottomPath;
                                 if (texPath) dataUrl = await getTexUrl(texPath);
+                            }
+                        }
+
+                        if (!dataUrl && cmEntry) {
+                            const cmBase = cmEntry.rel.replace(/\.[^/.]+$/, '').toLowerCase();
+                            const cmDir = cmEntry.rel.includes('/') ? cmEntry.rel.slice(0, cmEntry.rel.lastIndexOf('/') + 1).toLowerCase() : '';
+                            for (const ac of [cmBase + '_texture.png', cmBase + '.png', cmBase + '_greyscale.png']) {
+                                const u = await getTexUrl(ac);
+                                if (u) { dataUrl = u; break; }
+                            }
+                            if (!dataUrl && cmDir) {
+                                for (const [rl, val] of gh3dLowerPathMap.entries()) {
+                                    if (rl.startsWith(cmDir) && rl.endsWith('.png') && !/(_normal|_bump|_roughness|_metallic|_specular|_emissive|_mask|_ao|icon|preview)\.png$/i.test(rl)) {
+                                        dataUrl = await getTexUrl(val.rel);
+                                        if (dataUrl) break;
+                                    }
+                                }
                             }
                         }
                     }
@@ -8207,7 +8211,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            const info = { dataUrl, faces, tint, drawType, color, customModelContent, customModelScale };
+            const info = { dataUrl, faces, tint, drawType, color, hitboxType, customModelContent, customModelScale };
             gh3dBlockTexCache.set(cacheKey, info);
             result[blockName] = info;
         }));
@@ -8926,8 +8930,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     map: tex,
                     roughness: 0.65,
                     metalness: 0.1,
-                    alphaTest: 0.1,
-                    transparent: true,
+                    alphaTest: 0.35,
+                    transparent: false,
                     side: THREE.DoubleSide,
                     wireframe: threeWireframe
                 })
@@ -9065,7 +9069,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     const pitch = (b.rotation >> 2) & 3;
                                     const roll = (b.rotation >> 4) & 3;
                                     inst.rotation.order = 'YXZ';
-                                    inst.rotation.set((pitch * Math.PI) / 2, (yaw * Math.PI) / 2, (roll * Math.PI) / 2);
+                                    inst.rotation.set(-(pitch * Math.PI) / 2, (yaw * Math.PI) / 2, -(roll * Math.PI) / 2);
                                 }
                                 inst.userData.blockName = blockName;
                                 inst.userData.blockData = b;
@@ -9169,18 +9173,20 @@ document.addEventListener('DOMContentLoaded', () => {
             instancedMesh.userData.blockList = blockList;
             instancedMesh.userData.prefabCenter = { centerX, baseY, centerZ };
 
+            const ht = String((blockInfo && blockInfo.hitboxType) || '').toLowerCase();
+            const isHalfSlab = !useCross && (ht.includes('slab') || ht.includes('half') || /(_half|_slab)$/i.test(blockName));
             const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
             const tmpQuat = new THREE.Quaternion();
             const tmpPos = new THREE.Vector3();
-            const tmpScale = new THREE.Vector3(1, 1, 1);
+            const tmpScale = new THREE.Vector3(1, isHalfSlab ? 0.5 : 1, 1);
             for (let i = 0; i < blockList.length; i++) {
                 const b = blockList[i];
-                tmpPos.set(b.x - centerX, b.y - baseY + 0.5, b.z - centerZ);
+                tmpPos.set(b.x - centerX, b.y - baseY + (isHalfSlab ? 0.25 : 0.5), b.z - centerZ);
                 if (typeof b.rotation === 'number' && b.rotation !== 0) {
                     const yaw = b.rotation & 3;
                     const pitch = (b.rotation >> 2) & 3;
                     const roll = (b.rotation >> 4) & 3;
-                    tmpEuler.set((pitch * Math.PI) / 2, (yaw * Math.PI) / 2, (roll * Math.PI) / 2);
+                    tmpEuler.set(-(pitch * Math.PI) / 2, (yaw * Math.PI) / 2, -(roll * Math.PI) / 2);
                     tmpQuat.setFromEuler(tmpEuler);
                 } else {
                     tmpQuat.identity();
